@@ -52108,6 +52108,7 @@
   var REPORTS_KEY = "clientfolio-reports-v2";
   var LEGACY_CLIENTS_KEY = "clientfolio-clients";
   var LEGACY_REPORTS_KEY = "clientfolio-reports";
+  var memoryStorage = /* @__PURE__ */ new Map();
   var COVERAGE_TYPES = [
     "\u4EBA\u58FD / Life",
     "\u5371\u75BE / Critical illness",
@@ -52248,12 +52249,13 @@
   }
   function readStorage(key2) {
     try {
-      const value = localStorage.getItem(key2);
-      return value ? JSON.parse(value) : null;
+      const value = globalThis.localStorage?.getItem(key2);
+      if (value) return JSON.parse(value);
     } catch (error2) {
       console.warn(`Unable to read ${key2}`, error2);
-      return null;
     }
+    const fallback = memoryStorage.get(key2);
+    return fallback ? JSON.parse(fallback) : null;
   }
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
@@ -52400,8 +52402,16 @@
   var pendingAttachments = [];
   var pdfFontBytesPromise;
   function persist() {
-    localStorage.setItem(CLIENTS_KEY, JSON.stringify(clients));
-    localStorage.setItem(REPORTS_KEY, JSON.stringify(reports));
+    const records = [[CLIENTS_KEY, clients], [REPORTS_KEY, reports]];
+    records.forEach(([key2, value]) => {
+      const serialised = JSON.stringify(value);
+      memoryStorage.set(key2, serialised);
+      try {
+        globalThis.localStorage?.setItem(key2, serialised);
+      } catch (error2) {
+        console.warn(`Unable to persist ${key2}`, error2);
+      }
+    });
   }
   function getClient(clientId) {
     return clients.find((client) => client.id === clientId);
@@ -52422,8 +52432,8 @@
   }
   function formatMoney(value, currency) {
     if (value === void 0 || value === null || String(value).trim() === "") return "";
-    const clean = String(value).trim().replace(/^[$\s]+/, "");
-    return `${clean} $ ${currency || "HKD"}`;
+    const clean = String(value).trim().replace(/^\$\s*/, "").replace(/\s+\$\s*(?:[A-Z]{3}|其他\s*\/\s*Other)\s*$/i, "").replace(/\s+(?:[A-Z]{3}|其他\s*\/\s*Other)\s*$/i, "");
+    return `$${clean} ${currency || "HKD"}`;
   }
   function frequencyLabel(value) {
     return CONTRIBUTION_FREQUENCIES.find((item) => item[0] === value)?.[1] || value || "\u2014";
@@ -52435,7 +52445,7 @@
     const currencyOptions = ["HKD", "USD", "CNY", "\u5176\u4ED6 / Other"].map((option) => `<option value="${option}"${selectedAttribute(p.currency, option)}>${option}</option>`).join("");
     const input = (field, label, english, type = "text", extra = "") => `<label>${label}<small>${english}</small><input data-field="${field}" type="${type}" value="${escapeHtml(p[field])}" ${extra}></label>`;
     return `<article class="policy-card" data-policy-index="${index}">
-    <div class="policy-card-heading"><div><h3>\u4FDD\u55AE ${index + 1} <span>Policy ${index + 1}</span></h3><p>\u8CA8\u5E63\u5148\u884C\uFF0C\u91D1\u984D\u6703\u5728 PDF \u5167\u986F\u793A $ \u53CA\u8CA8\u5E63\u3002<span>Choose currency before entering money amounts.</span></p></div>${total > 1 ? `<button type="button" class="remove-link" data-action="remove-policy" data-policy-index="${index}">\u79FB\u9664 / Remove</button>` : ""}</div>
+    <div class="policy-card-heading"><div><h3>\u4FDD\u55AE ${index + 1} <span>Policy ${index + 1}</span></h3><p>\u8CA8\u5E63\u5148\u884C\uFF0C\u91D1\u984D\u6703\u986F\u793A\u70BA $1000 USD\u3002<span>Amounts appear as $1000 USD.</span></p></div>${total > 1 ? `<button type="button" class="remove-link" data-action="remove-policy" data-policy-index="${index}">\u79FB\u9664 / Remove</button>` : ""}</div>
     <div class="form-grid policy-grid">
       <label>\u8CA8\u5E63 <small>Currency</small><select data-field="currency">${currencyOptions}</select></label>
       <label>\u4FDD\u969C\u985E\u5225 <small>Coverage type</small><select data-field="coverageType">${coverageOptions}</select></label>
@@ -52512,10 +52522,10 @@
     const reportTotal = getClientReports(client.id).length;
     return `<div class="client-table-row client-link" data-client-id="${escapeHtml(client.id)}" tabindex="0" role="button">
     <div class="table-client"><span class="client-avatar">${escapeHtml(initials(client.name || client.chineseName))}</span><span><span class="table-name">${escapeHtml(client.chineseName || client.name)}</span><small>${escapeHtml(client.name || "\u672A\u6709\u82F1\u6587\u59D3\u540D / No English name")}</small></span></div>
-    <span class="table-muted">${escapeHtml(client.phone || "\u2014")}<small>${escapeHtml(client.email || "\u2014")}</small></span>
+    <span class="table-contact"><span>\u96FB\u8A71 / Phone: ${escapeHtml(client.phone || "\u2014")}</span><small>\u96FB\u90F5 / Email: ${escapeHtml(client.email || "\u2014")}</small></span>
     <span class="table-muted">${escapeHtml(formatDateRelative(client.updatedAt || client.createdAt))}</span>
     <span class="table-reports">${reportTotal}</span>
-    <span class="row-actions"><button class="icon-action" type="button" data-action="download-client" data-client-id="${escapeHtml(client.id)}" title="\u4E0B\u8F09\u5BA2\u6236 PDF / Download client PDF">PDF</button></span>
+    <span class="row-actions"><button class="delete-action" type="button" data-action="delete-client" data-client-id="${escapeHtml(client.id)}" title="\u522A\u9664\u5BA2\u6236 / Delete client">\u522A\u9664 / Delete</button></span>
   </div>`;
   }
   function renderFilterOptions() {
@@ -52585,7 +52595,7 @@
   }
   function reportDetailMarkup(report) {
     const attachmentLabel = report.attachments?.length ? ` \xB7 ${report.attachments.length} \u5F35\u76F8\u7247 / photo${report.attachments.length === 1 ? "" : "s"}` : "";
-    return `<article class="report-detail"><div class="report-detail-heading"><div><h3>${escapeHtml(report.topic || "\u6703\u9762\u5831\u544A / Meeting report")}</h3><p>${escapeHtml(formatDateDisplay(report.date))} \xB7 ${escapeHtml(report.status === "Complete" ? "\u5B8C\u6210 / Complete" : "\u8349\u7A3F / Draft")}${attachmentLabel}</p></div><div class="inline-actions"><button class="text-button" type="button" data-action="edit-report" data-report-id="${escapeHtml(report.id)}">\u7DE8\u8F2F / Edit</button><button class="text-button" type="button" data-action="download-report" data-report-id="${escapeHtml(report.id)}">\u4E0B\u8F09 PDF / PDF</button></div></div><dl>${detailRow("\u8A0E\u8AD6\u5167\u5BB9 / Discussion", report.discussion)}${detailRow("\u5BA2\u6236\u76EE\u524D\u60C5\u6CC1 / Client situation", report.situation)}${detailRow("\u9700\u8981\u53CA\u5EFA\u8B70 / Needs and recommendations", report.recommendations)}${detailRow("\u5DF2\u540C\u610F\u7684\u884C\u52D5 / Actions agreed", report.actions)}${detailRow("\u4E0B\u6B21\u8DDF\u9032 / Follow-up", formatDateDisplay(report.followup))}</dl></article>`;
+    return `<article class="report-detail"><div class="report-detail-heading"><div><h3>${escapeHtml(report.topic || "\u6703\u9762\u5831\u544A / Meeting report")}</h3><p>${escapeHtml(formatDateDisplay(report.date))} \xB7 ${escapeHtml(report.status === "Complete" ? "\u5B8C\u6210 / Complete" : "\u8349\u7A3F / Draft")}${attachmentLabel}</p></div><div class="inline-actions"><button class="text-button" type="button" data-action="edit-report" data-report-id="${escapeHtml(report.id)}">\u7DE8\u8F2F / Edit</button><button class="text-button" type="button" data-action="download-report" data-report-id="${escapeHtml(report.id)}">\u4E0B\u8F09 PDF / Download</button></div></div><dl>${detailRow("\u8A0E\u8AD6\u5167\u5BB9 / Discussion", report.discussion)}${detailRow("\u5BA2\u6236\u76EE\u524D\u60C5\u6CC1 / Client situation", report.situation)}${detailRow("\u9700\u8981\u53CA\u5EFA\u8B70 / Needs and recommendations", report.recommendations)}${detailRow("\u5DF2\u540C\u610F\u7684\u884C\u52D5 / Actions agreed", report.actions)}${detailRow("\u4E0B\u6B21\u8DDF\u9032 / Follow-up", formatDateDisplay(report.followup))}</dl></article>`;
   }
   function renderClientDetail(clientId = activeClientId) {
     const client = getClient(clientId);
@@ -52598,12 +52608,12 @@
     const lastMeeting = clientReports[0];
     const lastReportDate = clientReports[0]?.updatedAt || clientReports[0]?.createdAt;
     const policies = client.policies || [];
-    $("#client-detail-content").innerHTML = `<div class="detail-heading"><button class="back" data-go="clients" aria-label="\u8FD4\u56DE\u5BA2\u6236 / Back to clients">\u2190</button><div class="detail-title"><p class="eyebrow">\u5BA2\u6236\u8CC7\u6599 / Client record</p><h1>${escapeHtml(client.chineseName || client.name)}<span class="heading-en">${escapeHtml(client.name || "")}</span></h1><p class="subtext">${escapeHtml(client.occupation || "\u5BA2\u6236 / Client")}</p></div><div class="detail-actions"><button class="outline" type="button" data-action="download-client" data-client-id="${escapeHtml(client.id)}">\u4E0B\u8F09\u5BA2\u6236 PDF <span>Download PDF</span></button><button class="primary" type="button" data-action="new-report" data-client-id="${escapeHtml(client.id)}">\uFF0B \u65B0\u589E\u6703\u9762\u5831\u544A <span>New report</span></button></div></div>
+    $("#client-detail-content").innerHTML = `<div class="detail-heading"><button class="back" data-go="clients" aria-label="\u8FD4\u56DE\u5BA2\u6236 / Back to clients">\u2190</button><div class="detail-title"><p class="eyebrow">\u5BA2\u6236\u8CC7\u6599 / Client record</p><h1>${escapeHtml(client.chineseName || client.name)}<span class="heading-en">${escapeHtml(client.name || "")}</span></h1><p class="subtext">${escapeHtml(client.occupation || "\u5BA2\u6236 / Client")}</p></div><div class="detail-actions"><button class="primary" type="button" data-action="new-report" data-client-id="${escapeHtml(client.id)}">\uFF0B \u65B0\u589E\u6703\u9762\u5831\u544A <span>New report</span></button></div></div>
     <div class="detail-summary-grid">
       <article class="card"><h2>\u57FA\u672C\u8CC7\u6599 <span>Basic information</span></h2><dl>${detailRow("\u82F1\u6587\u59D3\u540D / English name", client.name)}${detailRow("\u4E2D\u6587\u59D3\u540D / Chinese name", client.chineseName)}${detailRow("\u96FB\u8A71 / Telephone", client.phone)}${detailRow("\u96FB\u90F5 / Email", client.email)}${detailRow("\u8EAB\u4EFD\u8B49\u865F\u78BC / HKID", client.idNumber)}${detailRow("\u4F4F\u5740 / Address", client.address)}${detailRow("\u8077\u696D / Occupation", client.occupation)}</dl></article>
       <article class="card"><h2>\u8A18\u9304\u6458\u8981 <span>Record summary</span></h2><dl>${detailRow("\u6700\u8FD1\u6703\u9762 / Last meeting", lastMeeting ? formatDateDisplay(lastMeeting.date) : "\u672A\u6709\u8A18\u9304 / No meeting yet")}${detailRow("\u6700\u8FD1\u5831\u544A\u8F38\u5165 / Last report saved", lastReportDate ? formatDateDisplay(lastReportDate) : "\u672A\u6709\u5831\u544A / No report yet")}${detailRow("\u4FDD\u55AE\u6578\u91CF / Policies", String(policies.length))}${detailRow("\u6703\u9762\u5831\u544A / Meeting reports", String(clientReports.length))}</dl>${client.notes ? `<div class="detail-note"><strong>\u5099\u8A3B / Notes</strong><p>${escapeHtml(client.notes)}</p></div>` : ""}</article>
     </div>
-    <article class="card detail-section"><div class="card-title"><div><h2>\u73FE\u6709\u4FDD\u55AE <span>Existing policies</span></h2><p>\u9019\u4E9B\u4FDD\u55AE\u6703\u5728\u540C\u4E00\u4EFD\u5BA2\u6236 PDF \u5167\u3002<span>All policies are included in one client PDF.</span></p></div><button class="outline" type="button" data-action="download-client" data-client-id="${escapeHtml(client.id)}">\u91CD\u65B0\u4E0B\u8F09 / Download again</button></div>${policies.length ? policies.map(policyDetailMarkup).join("") : emptyState("\u5C1A\u672A\u8F38\u5165\u4FDD\u55AE\u8CC7\u6599 / No policy details entered yet.")}</article>
+    <article class="card detail-section"><div class="card-title"><div><h2>\u73FE\u6709\u4FDD\u55AE <span>Existing policies</span></h2><p>\u9019\u4E9B\u4FDD\u55AE\u6703\u5728\u540C\u4E00\u4EFD\u5BA2\u6236 PDF \u5167\u3002<span>All policies are included in one client PDF.</span></p></div><button class="outline" type="button" data-action="download-client" data-client-id="${escapeHtml(client.id)}">\u4E0B\u8F09\u4FDD\u55AE PDF <span>Download policy PDF</span></button></div>${policies.length ? policies.map(policyDetailMarkup).join("") : emptyState("\u5C1A\u672A\u8F38\u5165\u4FDD\u55AE\u8CC7\u6599 / No policy details entered yet.")}</article>
     <article class="card detail-section"><div class="card-title"><div><h2>\u6703\u9762\u5831\u544A <span>Meeting reports</span></h2><p>\u6BCF\u4EFD\u5831\u544A\u90FD\u53EF\u91CD\u65B0\u958B\u555F\u3001\u4FEE\u6539\u53CA\u4E0B\u8F09\u3002<span>Reopen, edit and download any report.</span></p></div><button class="text-button" type="button" data-action="new-report" data-client-id="${escapeHtml(client.id)}">\uFF0B \u65B0\u589E\u8A18\u9304 / Add record</button></div>${clientReports.length ? clientReports.map(reportDetailMarkup).join("") : emptyState("\u5C1A\u672A\u6709\u6703\u9762\u5831\u544A / No meeting reports yet.")}</article>`;
   }
   function setReportTitle(editing) {
@@ -52669,22 +52679,41 @@
     closeMobileNav();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
-  function saved(message) {
+  function saved(message, duration = 3200) {
     const toast = $("#toast");
     toast.textContent = message;
     toast.classList.add("show");
     window.clearTimeout(saved.timer);
-    saved.timer = window.setTimeout(() => toast.classList.remove("show"), 3200);
+    saved.timer = window.setTimeout(() => toast.classList.remove("show"), duration);
   }
-  function closeMobileNav() {
-    $("#sidebar").classList.remove("open");
-    $("#mobile-backdrop").classList.remove("show");
-    $("#mobile-menu").setAttribute("aria-expanded", "false");
+  function setPdfBusy(form, busy) {
+    const submit = form.querySelector('button[type="submit"]');
+    if (!submit) return;
+    if (busy) {
+      if (!submit.dataset.originalLabel) submit.dataset.originalLabel = submit.innerHTML;
+      submit.disabled = true;
+      submit.innerHTML = "\u6B63\u5728\u7522\u751F PDF... <span>Preparing PDF...</span>";
+      form.setAttribute("aria-busy", "true");
+    } else {
+      submit.disabled = false;
+      if (submit.dataset.originalLabel) submit.innerHTML = submit.dataset.originalLabel;
+      form.removeAttribute("aria-busy");
+    }
   }
-  function toggleMobileNav() {
-    const open = $("#sidebar").classList.toggle("open");
+  function setMobileNavState(open) {
+    const sidebar = $("#sidebar");
+    const isMobile = window.matchMedia("(max-width: 800px)").matches;
+    sidebar.classList.toggle("open", open);
     $("#mobile-backdrop").classList.toggle("show", open);
     $("#mobile-menu").setAttribute("aria-expanded", String(open));
+    sidebar.setAttribute("aria-hidden", String(isMobile && !open));
+    if ("inert" in sidebar) sidebar.inert = isMobile && !open;
+  }
+  function closeMobileNav() {
+    setMobileNavState(false);
+  }
+  function toggleMobileNav() {
+    setMobileNavState(!$("#sidebar").classList.contains("open"));
   }
   function openHelp() {
     $("#help-modal").hidden = false;
@@ -52834,11 +52863,13 @@
     }
     row(label, value) {
       if (value === void 0 || value === null || String(value).trim() === "") return;
-      const valueLines = wrapMixed(String(value), 330, this.fonts, 14);
-      const rowHeight = Math.max(22, valueLines.length * 20) + 5;
+      const labelLines = wrapMixed(label, this.width - this.margin * 2, this.fonts, 11);
+      const valueLines = wrapMixed(String(value), this.width - this.margin * 2, this.fonts, 14);
+      const rowHeight = labelLines.length * 14 + valueLines.length * 20 + 10;
       this.ensure(rowHeight);
-      drawMixedText(this.page, `${label}:`, this.margin, this.y, 14, this.fonts, rgb(0.38, 0.45, 0.41));
-      valueLines.forEach((line, index) => drawMixedText(this.page, line, 205, this.y - index * 20, 14, this.fonts, rgb(0.12, 0.17, 0.14)));
+      labelLines.forEach((line, index) => drawMixedText(this.page, index === 0 ? `${line}:` : line, this.margin, this.y - index * 14, 11, this.fonts, rgb(0.38, 0.45, 0.41)));
+      const valueY = this.y - labelLines.length * 14 - 3;
+      valueLines.forEach((line, index) => drawMixedText(this.page, line, this.margin, valueY - index * 20, 14, this.fonts, rgb(0.12, 0.17, 0.14)));
       this.y -= rowHeight;
     }
     muted(text) {
@@ -52854,13 +52885,35 @@
   };
   async function getPdfFonts(pdf) {
     pdf.registerFontkit(fontkit_es_default);
-    if (!pdfFontBytesPromise) pdfFontBytesPromise = fetch("assets/NotoSerifTC.woff").then((response) => {
+    if (!pdfFontBytesPromise) {
+      pdfFontBytesPromise = loadPdfFontBytes().catch((error2) => {
+        pdfFontBytesPromise = void 0;
+        throw error2;
+      });
+    }
+    const [cjkBytes, times] = await Promise.all([pdfFontBytesPromise, pdf.embedFont(StandardFonts.TimesRoman)]);
+    const cjk = await pdf.embedFont(cjkBytes, { subset: false });
+    return { cjk, times };
+  }
+  function decodeEmbeddedFont(base64) {
+    if (!base64 || typeof atob !== "function") return void 0;
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    return bytes.buffer;
+  }
+  function loadPdfFontBytes() {
+    try {
+      const embedded = decodeEmbeddedFont(globalThis.__CLIENTFOLIO_FONT_DATA__);
+      if (embedded) return Promise.resolve(embedded);
+    } catch (error2) {
+      console.warn("Embedded Chinese font could not be decoded", error2);
+    }
+    if (typeof fetch !== "function") return Promise.reject(new Error("Chinese font could not be loaded"));
+    return fetch("assets/Deng.ttf").then((response) => {
       if (!response.ok) throw new Error("Chinese font could not be loaded");
       return response.arrayBuffer();
     });
-    const [cjkBytes, times] = await Promise.all([pdfFontBytesPromise, pdf.embedFont(StandardFonts.TimesRoman)]);
-    const cjk = await pdf.embedFont(cjkBytes, { subset: true });
-    return { cjk, times };
   }
   async function createPdfWriter() {
     const pdf = await PDFDocument_default.create();
@@ -52942,21 +52995,26 @@
     [["\u8A0E\u8AD6\u5167\u5BB9 / Discussion", report.discussion], ["\u5BA2\u6236\u76EE\u524D\u60C5\u6CC1 / Client situation", report.situation], ["\u9700\u8981\u53CA\u5EFA\u8B70 / Needs and recommendations", report.recommendations]].forEach(([label, value]) => writer.row(label, value));
     writer.section("\u4E0B\u4E00\u6B65 / Next steps");
     [["\u5DF2\u540C\u610F\u7684\u884C\u52D5 / Actions agreed", report.actions], ["\u4E0B\u6B21\u8DDF\u9032 / Follow-up", formatDateDisplay(report.followup)]].forEach(([label, value]) => writer.row(label, value && value !== "\u672A\u8A2D\u5B9A / Not set" ? value : ""));
-    const attachments = report.attachments || [];
-    for (const attachment of attachments) {
-      if (!attachment.data?.startsWith("data:image")) continue;
-      try {
-        const image = attachment.data.startsWith("data:image/png") ? await pdf.embedPng(attachment.data) : await pdf.embedJpg(attachment.data);
-        writer.newPage();
-        drawMixedText(writer.page, `ATTACHED: ${attachment.name}`, writer.margin, 786, 14, fonts, rgb(0.12, 0.17, 0.14));
-        drawMixedText(writer.page, "\u76F8\u7247\u9644\u4EF6 / Photo attachment", writer.margin, 761, 12, fonts, rgb(0.45, 0.51, 0.47));
-        const scale2 = Math.min(490 / image.width, 650 / image.height, 1);
-        writer.page.drawImage(image, { x: writer.margin, y: 82, width: image.width * scale2, height: image.height * scale2 });
-      } catch (error2) {
-        console.warn("Unable to add attachment to PDF", error2);
-        writer.newPage();
-        writer.title(`ATTACHED: ${attachment.name}`, "\u76F8\u7247\u9644\u4EF6 / Photo attachment");
-        writer.muted("\u6B64\u76F8\u7247\u683C\u5F0F\u672A\u80FD\u52A0\u5165 PDF\uFF0C\u4F46\u5DF2\u4FDD\u5B58\u5728\u5831\u544A\u8A18\u9304\u5167\u3002 / The image format could not be embedded, but it remains in the saved report.");
+    const attachments = (report.attachments || []).filter((attachment) => attachment.data?.startsWith("data:image"));
+    for (let pageStart = 0; pageStart < attachments.length; pageStart += 3) {
+      writer.newPage();
+      drawMixedText(writer.page, "ATTACHED: \u76F8\u7247\u9644\u4EF6 / Photo attachments", writer.margin, 786, 14, fonts, rgb(0.12, 0.17, 0.14));
+      drawMixedText(writer.page, `${displayClientName(client)} \xB7 ${formatDateDisplay(report.date || report.updatedAt)}`, writer.margin, 761, 11, fonts, rgb(0.45, 0.51, 0.47));
+      let slotTop = 726;
+      for (const attachment of attachments.slice(pageStart, pageStart + 3)) {
+        try {
+          const image = attachment.data.startsWith("data:image/png") ? await pdf.embedPng(attachment.data) : await pdf.embedJpg(attachment.data);
+          drawMixedText(writer.page, `ATTACHED: ${attachment.name}`, writer.margin, slotTop, 10, fonts, rgb(0.38, 0.45, 0.41));
+          const scale2 = Math.min(490 / image.width, 178 / image.height, 1);
+          const width = image.width * scale2;
+          const height = image.height * scale2;
+          writer.page.drawImage(image, { x: writer.margin + (490 - width) / 2, y: slotTop - 14 - height, width, height });
+        } catch (error2) {
+          console.warn("Unable to add attachment to PDF", error2);
+          drawMixedText(writer.page, `ATTACHED: ${attachment.name}`, writer.margin, slotTop, 10, fonts, rgb(0.65, 0.35, 0.3));
+          drawMixedText(writer.page, "\u76F8\u7247\u683C\u5F0F\u672A\u80FD\u52A0\u5165 PDF / Image format could not be embedded", writer.margin, slotTop - 28, 11, fonts, rgb(0.45, 0.51, 0.47));
+        }
+        slotTop -= 224;
       }
     }
     writer.footers();
@@ -52964,6 +53022,7 @@
   }
   async function handleClientSubmit(event) {
     event.preventDefault();
+    const form = event.currentTarget;
     const data2 = Object.fromEntries(new FormData(event.currentTarget));
     const name5 = data2.name.trim() || "\u672A\u547D\u540D\u5BA2\u6236 / Untitled client";
     const now = nowIso();
@@ -52986,18 +53045,23 @@
     activeClientId = client.id;
     persist();
     renderAll();
+    setPdfBusy(form, true);
+    saved("\u6B63\u5728\u7522\u751F\u5BA2\u6236 PDF... / Preparing client PDF...", 12e3);
     try {
       await downloadClientPdf(client);
       saved("\u5BA2\u6236\u5DF2\u5132\u5B58\uFF0C\u5BA2\u6236 PDF \u5DF2\u4E0B\u8F09\u3002 / Client saved and PDF downloaded.");
     } catch (error2) {
       console.error(error2);
       saved("\u5BA2\u6236\u5DF2\u5132\u5B58\uFF0C\u4F46 PDF \u4E0B\u8F09\u5931\u6557\u3002\u8ACB\u7A0D\u5F8C\u518D\u8A66\u3002 / Client saved; PDF download failed.");
+    } finally {
+      setPdfBusy(form, false);
     }
     resetClientForm();
     go("client-detail");
   }
   async function handleReportSubmit(event) {
     event.preventDefault();
+    const form = event.currentTarget;
     const data2 = Object.fromEntries(new FormData(event.currentTarget));
     const client = getClient(data2.clientId);
     if (!client) {
@@ -53027,12 +53091,16 @@
     client.updatedAt = report.updatedAt;
     persist();
     renderAll();
+    setPdfBusy(form, true);
+    saved("\u6B63\u5728\u7522\u751F\u6703\u9762 PDF... / Preparing meeting PDF...", 12e3);
     try {
       await downloadMeetingPdf(report, client);
       saved(existing ? "\u6703\u9762\u5831\u544A\u5DF2\u66F4\u65B0\uFF0C\u6700\u65B0 PDF \u5DF2\u4E0B\u8F09\u3002 / Report updated and PDF downloaded." : "\u6703\u9762\u5831\u544A\u5DF2\u5132\u5B58\uFF0CPDF \u5DF2\u4E0B\u8F09\u3002 / Report saved and PDF downloaded.");
     } catch (error2) {
       console.error(error2);
       saved("\u6703\u9762\u5831\u544A\u5DF2\u5132\u5B58\uFF0C\u4F46 PDF \u4E0B\u8F09\u5931\u6557\u3002 / Report saved; PDF download failed.");
+    } finally {
+      setPdfBusy(form, false);
     }
     activeClientId = client.id;
     currentAttachments = [];
@@ -53050,6 +53118,22 @@
       console.error(error2);
       saved("PDF \u4E0B\u8F09\u5931\u6557\uFF0C\u8ACB\u7A0D\u5F8C\u518D\u8A66\u3002 / PDF download failed.");
     }
+  }
+  function deleteClient(clientId) {
+    const client = getClient(clientId);
+    if (!client) return;
+    const confirmed = window.confirm(`\u78BA\u5B9A\u8981\u522A\u9664 ${displayClientName(client)}\uFF1F
+
+\u9019\u6703\u540C\u6642\u522A\u9664\u8A72\u5BA2\u6236\u7684\u4FDD\u55AE\u8CC7\u6599\u53CA\u6703\u9762\u5831\u544A\u3002
+Delete this client, policies and meeting reports?`);
+    if (!confirmed) return;
+    clients = clients.filter((item) => item.id !== clientId);
+    reports = reports.filter((report) => report.clientId !== clientId);
+    if (activeClientId === clientId) activeClientId = "";
+    persist();
+    renderAll();
+    go("clients");
+    saved("\u5BA2\u6236\u53CA\u76F8\u95DC\u5831\u544A\u5DF2\u522A\u9664\u3002 / Client and linked reports deleted.");
   }
   async function handleDownloadReport(reportId) {
     const report = reports.find((item) => item.id === reportId);
@@ -53089,6 +53173,7 @@
         go("client-detail");
       }
       if (name5 === "download-client") void handleDownloadClient(action.dataset.clientId);
+      if (name5 === "delete-client") deleteClient(action.dataset.clientId);
       if (name5 === "new-report") openNewReport(action.dataset.clientId || "");
       if (name5 === "edit-report") openReportForEdit(action.dataset.reportId);
       if (name5 === "download-report") void handleDownloadReport(action.dataset.reportId);
@@ -53202,6 +53287,13 @@
   renderAll();
   var initialPage = window.location.hash.replace("#", "");
   if (["home", "clients", "new-client", "reports", "calendar"].includes(initialPage)) go(initialPage);
+  closeMobileNav();
+  if (typeof fetch === "function" || globalThis.__CLIENTFOLIO_FONT_DATA__) {
+    pdfFontBytesPromise = loadPdfFontBytes().catch(() => {
+      pdfFontBytesPromise = void 0;
+      return void 0;
+    });
+  }
 })();
 /*! Bundled license information:
 

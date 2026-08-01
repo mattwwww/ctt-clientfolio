@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f5f7f4" />
+    <title>客戶資料中心 / Clientfolio</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar">
+        <a class="brand" href="#home" data-go="home" aria-label="返回總覽 / Go to overview">
+          <span class="brand-mark">C</span>
+          <span>clientfolio</span>
+        </a>
+        <nav class="nav" aria-label="主要導覽 / Main navigation">
+          <button class="nav-link active" data-page="home"><span aria-hidden="true">◷</span> 總覽 <em>Overview</em></button>
+          <button class="nav-link" data-page="clients"><span aria-hidden="true">◎</span> 客戶 <em>Clients</em></button>
+          <button class="nav-link" data-page="reports" data-new-report="true"><span aria-hidden="true">▤</span> 會面報告 <em>Meeting reports</em></button>
+          <button class="nav-link" data-page="calendar"><span aria-hidden="true">□</span> 日程 <em>Calendar</em></button>
+        </nav>
+        <div class="sidebar-footer">
+          <div class="avatar">MC</div>
+          <div><strong>Matthew Chan</strong><small>Financial consultant / 理財顧問</small></div>
+        </div>
+      </aside>
+
+      <main>
+        <header class="topbar">
+          <button class="mobile-menu" id="mobile-menu" aria-label="開啟導覽 / Open navigation" aria-expanded="false">☰</button>
+          <div class="crumb" id="crumb">總覽 / Overview</div>
+          <div class="top-actions">
+            <button class="icon-button" id="notifications" aria-label="通知 / Notifications">♧<i></i></button>
+            <button class="help" id="help-button" aria-label="使用說明 / Help">?</button>
+          </div>
+        </header>
+
+        <section class="page active" id="home">
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow" id="today-label">今天 / Today</p>
+              <h1>下午好，Matthew。<span class="heading-en">Good afternoon, Matthew.</span></h1>
+              <p class="subtext">這裡是你的客戶活動摘要。<span>Here is a quick look at your client activity.</span></p>
+            </div>
+            <button class="primary" data-go="new-client">＋ 新增客戶 <span>Add new client</span></button>
+          </div>
+
+          <div class="stats">
+            <article><span class="stat-icon sage" aria-hidden="true">◎</span><div><strong id="stat-total-clients">0</strong><small>客戶總數 / Total clients</small></div></article>
+            <article><span class="stat-icon sand" aria-hidden="true">▤</span><div><strong id="stat-month-reports">0</strong><small>本月報告 / Reports this month</small></div></article>
+            <article><span class="stat-icon lilac" aria-hidden="true">□</span><div><strong id="stat-followups">0</strong><small>即將跟進 / Upcoming follow-ups</small><button class="text-button stat-link" data-go="calendar">查看日程 / View schedule →</button></div></article>
+          </div>
+
+          <div class="overview-grid">
+            <article class="card recent">
+              <div class="card-title"><div><h2>最近客戶 <span>Recent clients</span></h2><p>最近更新的客戶資料 / Your latest client profiles</p></div><button class="text-button" data-go="clients">查看全部 / View all →</button></div>
+              <div id="recent-list"></div>
+            </article>
+            <article class="card upcoming">
+              <div class="card-title"><div><h2>即將跟進 <span>Upcoming follow-ups</span></h2><p>保持客戶關係持續發展 / Keep relationships moving</p></div></div>
+              <div id="upcoming-list"></div>
+              <button class="outline full" data-go="calendar">查看完整日程 / View calendar</button>
+            </article>
+          </div>
+        </section>
+
+        <section class="page" id="clients">
+          <div class="page-heading">
+            <div><p class="eyebrow">客戶名錄 / Client directory</p><h1>客戶 <span class="heading-en">Clients</span></h1><p class="subtext">搜尋、查看及管理客戶資料。<span>Search and manage your client records.</span></p></div>
+            <button class="primary" data-go="new-client">＋ 新增客戶 <span>Add new client</span></button>
+          </div>
+          <div class="search-row">
+            <label class="search"><span aria-hidden="true">⌕</span><input id="client-search" placeholder="按姓名、電話、電郵或保單編號搜尋 / Search by name, phone, email or policy no." /></label>
+            <button class="filter-button" id="filter-toggle" type="button" aria-expanded="false">☷ 篩選 / Filter <span>⌄</span></button>
+          </div>
+          <div class="filter-panel" id="filter-panel" hidden>
+            <label>保障類別 / Coverage type<select id="filter-coverage"><option value="">全部保障類別 / All types</option></select></label>
+            <label>貨幣 / Currency<select id="filter-currency"><option value="">全部貨幣 / All currencies</option><option value="HKD">HKD</option><option value="USD">USD</option><option value="CNY">CNY</option><option value="其他">其他 / Other</option></select></label>
+            <button class="outline" id="clear-filters" type="button">清除篩選 / Clear</button>
+          </div>
+          <div class="filter-chips" aria-label="客戶篩選 / Client filters">
+            <button class="chip selected" data-client-filter="all">全部客戶 / All clients <b id="all-client-count">0</b></button>
+            <button class="chip" data-client-filter="recent">最近新增 / Recently added</button>
+            <button class="chip" data-client-filter="followup">需要跟進 / Follow-up due</button>
+          </div>
+          <div class="table-card">
+            <div class="client-table-head"><span>客戶 / CLIENT</span><span>聯絡 / CONTACT</span><span>最近更新 / LAST UPDATED</span><span>報告 / REPORTS</span><span>操作 / ACTION</span></div>
+            <div id="client-table"></div>
+          </div>
+          <p class="local-note">資料會儲存在此裝置的瀏覽器內。<span>Records are stored locally on this device.</span></p>
+        </section>
+
+        <section class="page form-page" id="new-client">
+          <div class="form-heading"><button class="back" data-go="clients" aria-label="返回客戶 / Back to clients">←</button><div><p class="eyebrow">新增記錄 / New record</p><h1>新增客戶 <span class="heading-en">Add a new client</span></h1><p class="subtext">填寫你知道的資料，之後仍可查看和補充。<span>Fill in what you know; optional fields can be completed later.</span></p></div></div>
+          <form id="client-form" class="questionnaire">
+            <div class="form-section">
+              <h2>客戶基本資料 <span>Client details</span></h2>
+              <p>所有欄位均可留空。<span>Every field is optional.</span></p>
+              <div class="form-grid">
+                <label>英文姓名 <small>English name</small><input name="name" autocomplete="name" placeholder="例如：Emily Chan" /></label>
+                <label>中文姓名 <small>Chinese name</small><input name="chineseName" placeholder="例如：陳美玲" /></label>
+                <label>出生日期 <small>Date of birth</small><input name="birthDate" type="date" /></label>
+                <label>電話 <small>Telephone</small><input name="phone" type="tel" autocomplete="tel" placeholder="例如：+852 9123 4567" /></label>
+                <label>電郵 <small>Email</small><input name="email" type="email" autocomplete="email" placeholder="例如：name@example.com" /></label>
+                <label>身份證號碼 <small>HKID / ID number</small><input name="idNumber" placeholder="例如：A123456(7)" /></label>
+                <label class="wide">住址 <small>Address</small><input name="address" autocomplete="street-address" placeholder="住宅地址 / Residential address" /></label>
+                <label>職業 <small>Occupation</small><input name="occupation" placeholder="例如：企業主管 / Director" /></label>
+                <label>備註 <small>Notes</small><input name="notes" placeholder="其他客戶資料 / Other notes" /></label>
+              </div>
+            </div>
+
+            <div class="form-section">
+              <div class="section-heading-row"><div><h2>現有保單 <span>Existing policies</span></h2><p>每次填寫一張保單，所有保單會儲存在同一位客戶的同一份 PDF。<span>Add one policy at a time; all policies are saved in one client PDF.</span></p></div><span class="count-pill" id="policy-count">1 policy</span></div>
+              <div id="policy-list"></div>
+              <button type="button" class="outline add-policy" id="add-policy">＋ 新增一張保單 <span>Add another policy</span></button>
+            </div>
+
+            <div class="form-actions">
+              <button type="button" class="outline" data-go="clients">取消 <span>Cancel</span></button>
+              <button type="submit" class="primary">儲存客戶並下載 PDF <span>Save client &amp; download PDF</span></button>
+            </div>
+          </form>
+        </section>
+
+        <section class="page form-page" id="reports">
+          <div class="form-heading"><button class="back" data-go="clients" aria-label="返回客戶 / Back to clients">←</button><div><p class="eyebrow">會面記錄 / Meeting records</p><h1 id="report-page-title">新增會面報告 <span class="heading-en">New meeting report</span></h1><p class="subtext">記錄每次客戶對話，並可隨時重新開啟修改。<span>Save a clear record after each conversation and reopen it to edit.</span></p></div></div>
+          <form id="report-form" class="questionnaire">
+            <input type="hidden" name="reportId" id="report-id" />
+            <div class="form-section">
+              <h2>會面資料 <span>Meeting details</span></h2>
+              <p>先連結客戶，再加入這次會面的重點。<span>Link the client, then capture the essentials.</span></p>
+              <div class="form-grid">
+                <label>客戶 <small>Client</small><select id="report-client" name="clientId"><option value="">請選擇客戶 / Choose a client</option></select></label>
+                <label>會面日期 <small>Meeting date</small><input name="date" type="date" /></label>
+                <label>會面主題 <small>Meeting topic</small><input name="topic" placeholder="例如：保單檢討 / Portfolio review" /></label>
+                <label>報告狀態 <small>Report status</small><select name="status"><option value="Draft">草稿 / Draft</option><option value="Complete">完成 / Complete</option></select></label>
+                <label class="wide">討論內容 <small>What did you discuss?</small><textarea name="discussion" placeholder="記下談話、問題及客戶提出的需要。 / Summarise the conversation, questions and needs."></textarea></label>
+                <label class="wide">客戶目前情況 <small>Client situation</small><textarea name="situation" placeholder="財務狀況、家庭變化、保障缺口等。 / Current financial, family or protection situation."></textarea></label>
+                <label class="wide">需要及建議 <small>Needs and recommendations</small><textarea name="recommendations" placeholder="記下已提出或待跟進的建議。 / Recommendations discussed or to be prepared."></textarea></label>
+              </div>
+            </div>
+            <div class="form-section">
+              <h2>下一步及附件 <span>Next steps and attachments</span></h2>
+              <p>所有欄位均可留空；相片會在 PDF 的新頁面顯示。<span>All fields are optional; photos appear on new pages in the PDF.</span></p>
+              <div class="form-grid">
+                <label class="wide">已同意的行動 <small>Actions agreed</small><textarea name="actions" placeholder="你或客戶下一步會做甚麼？ / What will you or the client do next?"></textarea></label>
+                <label>下次跟進日期 <small>Follow-up date</small><input name="followup" type="date" /></label>
+                <label class="wide">上載會面相片 <small>Add meeting photos</small><input id="report-attachments" type="file" accept="image/*" multiple /></label>
+              </div>
+              <div class="existing-attachments" id="existing-attachments"></div>
+              <div class="photo-preview" id="photo-preview"></div>
+            </div>
+            <div class="form-actions">
+              <button type="button" class="outline" data-action="cancel-report">取消 <span>Cancel</span></button>
+              <button type="submit" class="primary">儲存報告並下載 PDF <span>Save report &amp; download PDF</span></button>
+            </div>
+          </form>
+        </section>
+
+        <section class="page" id="calendar">
+          <div class="page-heading"><div><p class="eyebrow">跟進日程 / Follow-up schedule</p><h1>即將預約 <span class="heading-en">Upcoming bookings</span></h1><p class="subtext">所有有設定下次跟進日期的會面都會顯示在這裡。<span>Every meeting with a follow-up date is shown here.</span></p></div><button class="primary" data-go="reports">＋ 新增會面報告 <span>New report</span></button></div>
+          <div class="table-card">
+            <div class="client-table-head calendar-head"><span>日期 / DATE</span><span>客戶 / CLIENT</span><span>會面 / MEETING</span><span>狀態 / STATUS</span><span></span></div>
+            <div id="calendar-list"></div>
+          </div>
+        </section>
+
+        <section class="page" id="client-detail">
+          <div id="client-detail-content"></div>
+        </section>
+      </main>
+    </div>
+
+    <div class="mobile-backdrop" id="mobile-backdrop"></div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <div class="modal" id="help-modal" hidden>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="help-title">
+        <button class="modal-close" id="help-close" aria-label="關閉 / Close">×</button>
+        <h2 id="help-title">使用說明 <span>How it works</span></h2>
+        <p>新增客戶後，所有保單會放在同一份客戶 PDF。每次會面都可建立或重新開啟報告，儲存後會下載同一份報告名稱的最新 PDF。<span>Save client details and multiple policies together, then create or edit linked meeting reports. Each save downloads the latest PDF.</span></p>
+        <p>資料會儲存在此裝置的瀏覽器內，適合在 iPhone 或 iPad 上快速輸入。<span>Records are stored locally in this browser for quick entry on iPhone or iPad.</span></p>
+      </div>
+    </div>
+
+    <script src="app.bundle.js?rev=20260801-4"></script>
+  </body>
+</html>

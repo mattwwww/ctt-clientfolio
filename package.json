@@ -4,7 +4,7 @@
   "description": "",
   "main": "app.js",
   "scripts": {
-    "build": "esbuild app.js --bundle --outfile=app.bundle.js",
+    "build": "esbuild app.js --bundle --outfile=app.bundle.js && node build-standalone.mjs",
     "test": "node --check app.js"
   },
   "keywords": [],

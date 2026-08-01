@@ -7,6 +7,7 @@ const CLIENTS_KEY = 'clientfolio-clients-v2';
 const REPORTS_KEY = 'clientfolio-reports-v2';
 const LEGACY_CLIENTS_KEY = 'clientfolio-clients';
 const LEGACY_REPORTS_KEY = 'clientfolio-reports';
+const memoryStorage = new Map();
 
 const COVERAGE_TYPES = [
   '人壽 / Life',
@@ -92,12 +93,13 @@ function todayIso() {
 
 function readStorage(key) {
   try {
-    const value = localStorage.getItem(key);
-    return value ? JSON.parse(value) : null;
+    const value = globalThis.localStorage?.getItem(key);
+    if (value) return JSON.parse(value);
   } catch (error) {
     console.warn(`Unable to read ${key}`, error);
-    return null;
   }
+  const fallback = memoryStorage.get(key);
+  return fallback ? JSON.parse(fallback) : null;
 }
 
 function escapeHtml(value) {
@@ -233,8 +235,16 @@ let pendingAttachments = [];
 let pdfFontBytesPromise;
 
 function persist() {
-  localStorage.setItem(CLIENTS_KEY, JSON.stringify(clients));
-  localStorage.setItem(REPORTS_KEY, JSON.stringify(reports));
+  const records = [[CLIENTS_KEY, clients], [REPORTS_KEY, reports]];
+  records.forEach(([key, value]) => {
+    const serialised = JSON.stringify(value);
+    memoryStorage.set(key, serialised);
+    try {
+      globalThis.localStorage?.setItem(key, serialised);
+    } catch (error) {
+      console.warn(`Unable to persist ${key}`, error);
+    }
+  });
 }
 
 function getClient(clientId) {
@@ -264,8 +274,11 @@ function reportCountThisMonth() {
 
 function formatMoney(value, currency) {
   if (value === undefined || value === null || String(value).trim() === '') return '';
-  const clean = String(value).trim().replace(/^[$\s]+/, '');
-  return `${clean} $ ${currency || 'HKD'}`;
+  const clean = String(value).trim()
+    .replace(/^\$\s*/, '')
+    .replace(/\s+\$\s*(?:[A-Z]{3}|其他\s*\/\s*Other)\s*$/i, '')
+    .replace(/\s+(?:[A-Z]{3}|其他\s*\/\s*Other)\s*$/i, '');
+  return `$${clean} ${currency || 'HKD'}`;
 }
 
 function frequencyLabel(value) {
@@ -279,7 +292,7 @@ function policyMarkup(policy = emptyPolicy(), index = 0, total = 1) {
   const currencyOptions = ['HKD', 'USD', 'CNY', '其他 / Other'].map(option => `<option value="${option}"${selectedAttribute(p.currency, option)}>${option}</option>`).join('');
   const input = (field, label, english, type = 'text', extra = '') => `<label>${label}<small>${english}</small><input data-field="${field}" type="${type}" value="${escapeHtml(p[field])}" ${extra}></label>`;
   return `<article class="policy-card" data-policy-index="${index}">
-    <div class="policy-card-heading"><div><h3>保單 ${index + 1} <span>Policy ${index + 1}</span></h3><p>貨幣先行，金額會在 PDF 內顯示 $ 及貨幣。<span>Choose currency before entering money amounts.</span></p></div>${total > 1 ? `<button type="button" class="remove-link" data-action="remove-policy" data-policy-index="${index}">移除 / Remove</button>` : ''}</div>
+    <div class="policy-card-heading"><div><h3>保單 ${index + 1} <span>Policy ${index + 1}</span></h3><p>貨幣先行，金額會顯示為 $1000 USD。<span>Amounts appear as $1000 USD.</span></p></div>${total > 1 ? `<button type="button" class="remove-link" data-action="remove-policy" data-policy-index="${index}">移除 / Remove</button>` : ''}</div>
     <div class="form-grid policy-grid">
       <label>貨幣 <small>Currency</small><select data-field="currency">${currencyOptions}</select></label>
       <label>保障類別 <small>Coverage type</small><select data-field="coverageType">${coverageOptions}</select></label>
@@ -362,10 +375,10 @@ function clientRowMarkup(client) {
   const reportTotal = getClientReports(client.id).length;
   return `<div class="client-table-row client-link" data-client-id="${escapeHtml(client.id)}" tabindex="0" role="button">
     <div class="table-client"><span class="client-avatar">${escapeHtml(initials(client.name || client.chineseName))}</span><span><span class="table-name">${escapeHtml(client.chineseName || client.name)}</span><small>${escapeHtml(client.name || '未有英文姓名 / No English name')}</small></span></div>
-    <span class="table-muted">${escapeHtml(client.phone || '—')}<small>${escapeHtml(client.email || '—')}</small></span>
+    <span class="table-contact"><span>電話 / Phone: ${escapeHtml(client.phone || '—')}</span><small>電郵 / Email: ${escapeHtml(client.email || '—')}</small></span>
     <span class="table-muted">${escapeHtml(formatDateRelative(client.updatedAt || client.createdAt))}</span>
     <span class="table-reports">${reportTotal}</span>
-    <span class="row-actions"><button class="icon-action" type="button" data-action="download-client" data-client-id="${escapeHtml(client.id)}" title="下載客戶 PDF / Download client PDF">PDF</button></span>
+    <span class="row-actions"><button class="delete-action" type="button" data-action="delete-client" data-client-id="${escapeHtml(client.id)}" title="刪除客戶 / Delete client">刪除 / Delete</button></span>
   </div>`;
 }
 
@@ -444,7 +457,7 @@ function policyDetailMarkup(policy, index) {
 
 function reportDetailMarkup(report) {
   const attachmentLabel = report.attachments?.length ? ` · ${report.attachments.length} 張相片 / photo${report.attachments.length === 1 ? '' : 's'}` : '';
-  return `<article class="report-detail"><div class="report-detail-heading"><div><h3>${escapeHtml(report.topic || '會面報告 / Meeting report')}</h3><p>${escapeHtml(formatDateDisplay(report.date))} · ${escapeHtml(report.status === 'Complete' ? '完成 / Complete' : '草稿 / Draft')}${attachmentLabel}</p></div><div class="inline-actions"><button class="text-button" type="button" data-action="edit-report" data-report-id="${escapeHtml(report.id)}">編輯 / Edit</button><button class="text-button" type="button" data-action="download-report" data-report-id="${escapeHtml(report.id)}">下載 PDF / PDF</button></div></div><dl>${detailRow('討論內容 / Discussion', report.discussion)}${detailRow('客戶目前情況 / Client situation', report.situation)}${detailRow('需要及建議 / Needs and recommendations', report.recommendations)}${detailRow('已同意的行動 / Actions agreed', report.actions)}${detailRow('下次跟進 / Follow-up', formatDateDisplay(report.followup))}</dl></article>`;
+  return `<article class="report-detail"><div class="report-detail-heading"><div><h3>${escapeHtml(report.topic || '會面報告 / Meeting report')}</h3><p>${escapeHtml(formatDateDisplay(report.date))} · ${escapeHtml(report.status === 'Complete' ? '完成 / Complete' : '草稿 / Draft')}${attachmentLabel}</p></div><div class="inline-actions"><button class="text-button" type="button" data-action="edit-report" data-report-id="${escapeHtml(report.id)}">編輯 / Edit</button><button class="text-button" type="button" data-action="download-report" data-report-id="${escapeHtml(report.id)}">下載 PDF / Download</button></div></div><dl>${detailRow('討論內容 / Discussion', report.discussion)}${detailRow('客戶目前情況 / Client situation', report.situation)}${detailRow('需要及建議 / Needs and recommendations', report.recommendations)}${detailRow('已同意的行動 / Actions agreed', report.actions)}${detailRow('下次跟進 / Follow-up', formatDateDisplay(report.followup))}</dl></article>`;
 }
 
 function renderClientDetail(clientId = activeClientId) {
@@ -455,12 +468,12 @@ function renderClientDetail(clientId = activeClientId) {
   const lastMeeting = clientReports[0];
   const lastReportDate = clientReports[0]?.updatedAt || clientReports[0]?.createdAt;
   const policies = client.policies || [];
-  $('#client-detail-content').innerHTML = `<div class="detail-heading"><button class="back" data-go="clients" aria-label="返回客戶 / Back to clients">←</button><div class="detail-title"><p class="eyebrow">客戶資料 / Client record</p><h1>${escapeHtml(client.chineseName || client.name)}<span class="heading-en">${escapeHtml(client.name || '')}</span></h1><p class="subtext">${escapeHtml(client.occupation || '客戶 / Client')}</p></div><div class="detail-actions"><button class="outline" type="button" data-action="download-client" data-client-id="${escapeHtml(client.id)}">下載客戶 PDF <span>Download PDF</span></button><button class="primary" type="button" data-action="new-report" data-client-id="${escapeHtml(client.id)}">＋ 新增會面報告 <span>New report</span></button></div></div>
+  $('#client-detail-content').innerHTML = `<div class="detail-heading"><button class="back" data-go="clients" aria-label="返回客戶 / Back to clients">←</button><div class="detail-title"><p class="eyebrow">客戶資料 / Client record</p><h1>${escapeHtml(client.chineseName || client.name)}<span class="heading-en">${escapeHtml(client.name || '')}</span></h1><p class="subtext">${escapeHtml(client.occupation || '客戶 / Client')}</p></div><div class="detail-actions"><button class="primary" type="button" data-action="new-report" data-client-id="${escapeHtml(client.id)}">＋ 新增會面報告 <span>New report</span></button></div></div>
     <div class="detail-summary-grid">
       <article class="card"><h2>基本資料 <span>Basic information</span></h2><dl>${detailRow('英文姓名 / English name', client.name)}${detailRow('中文姓名 / Chinese name', client.chineseName)}${detailRow('電話 / Telephone', client.phone)}${detailRow('電郵 / Email', client.email)}${detailRow('身份證號碼 / HKID', client.idNumber)}${detailRow('住址 / Address', client.address)}${detailRow('職業 / Occupation', client.occupation)}</dl></article>
       <article class="card"><h2>記錄摘要 <span>Record summary</span></h2><dl>${detailRow('最近會面 / Last meeting', lastMeeting ? formatDateDisplay(lastMeeting.date) : '未有記錄 / No meeting yet')}${detailRow('最近報告輸入 / Last report saved', lastReportDate ? formatDateDisplay(lastReportDate) : '未有報告 / No report yet')}${detailRow('保單數量 / Policies', String(policies.length))}${detailRow('會面報告 / Meeting reports', String(clientReports.length))}</dl>${client.notes ? `<div class="detail-note"><strong>備註 / Notes</strong><p>${escapeHtml(client.notes)}</p></div>` : ''}</article>
     </div>
-    <article class="card detail-section"><div class="card-title"><div><h2>現有保單 <span>Existing policies</span></h2><p>這些保單會在同一份客戶 PDF 內。<span>All policies are included in one client PDF.</span></p></div><button class="outline" type="button" data-action="download-client" data-client-id="${escapeHtml(client.id)}">重新下載 / Download again</button></div>${policies.length ? policies.map(policyDetailMarkup).join('') : emptyState('尚未輸入保單資料 / No policy details entered yet.')}</article>
+    <article class="card detail-section"><div class="card-title"><div><h2>現有保單 <span>Existing policies</span></h2><p>這些保單會在同一份客戶 PDF 內。<span>All policies are included in one client PDF.</span></p></div><button class="outline" type="button" data-action="download-client" data-client-id="${escapeHtml(client.id)}">下載保單 PDF <span>Download policy PDF</span></button></div>${policies.length ? policies.map(policyDetailMarkup).join('') : emptyState('尚未輸入保單資料 / No policy details entered yet.')}</article>
     <article class="card detail-section"><div class="card-title"><div><h2>會面報告 <span>Meeting reports</span></h2><p>每份報告都可重新開啟、修改及下載。<span>Reopen, edit and download any report.</span></p></div><button class="text-button" type="button" data-action="new-report" data-client-id="${escapeHtml(client.id)}">＋ 新增記錄 / Add record</button></div>${clientReports.length ? clientReports.map(reportDetailMarkup).join('') : emptyState('尚未有會面報告 / No meeting reports yet.')}</article>`;
 }
 
@@ -534,24 +547,45 @@ function go(page) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function saved(message) {
+function saved(message, duration = 3200) {
   const toast = $('#toast');
   toast.textContent = message;
   toast.classList.add('show');
   window.clearTimeout(saved.timer);
-  saved.timer = window.setTimeout(() => toast.classList.remove('show'), 3200);
+  saved.timer = window.setTimeout(() => toast.classList.remove('show'), duration);
+}
+
+function setPdfBusy(form, busy) {
+  const submit = form.querySelector('button[type="submit"]');
+  if (!submit) return;
+  if (busy) {
+    if (!submit.dataset.originalLabel) submit.dataset.originalLabel = submit.innerHTML;
+    submit.disabled = true;
+    submit.innerHTML = '正在產生 PDF... <span>Preparing PDF...</span>';
+    form.setAttribute('aria-busy', 'true');
+  } else {
+    submit.disabled = false;
+    if (submit.dataset.originalLabel) submit.innerHTML = submit.dataset.originalLabel;
+    form.removeAttribute('aria-busy');
+  }
+}
+
+function setMobileNavState(open) {
+  const sidebar = $('#sidebar');
+  const isMobile = window.matchMedia('(max-width: 800px)').matches;
+  sidebar.classList.toggle('open', open);
+  $('#mobile-backdrop').classList.toggle('show', open);
+  $('#mobile-menu').setAttribute('aria-expanded', String(open));
+  sidebar.setAttribute('aria-hidden', String(isMobile && !open));
+  if ('inert' in sidebar) sidebar.inert = isMobile && !open;
 }
 
 function closeMobileNav() {
-  $('#sidebar').classList.remove('open');
-  $('#mobile-backdrop').classList.remove('show');
-  $('#mobile-menu').setAttribute('aria-expanded', 'false');
+  setMobileNavState(false);
 }
 
 function toggleMobileNav() {
-  const open = $('#sidebar').classList.toggle('open');
-  $('#mobile-backdrop').classList.toggle('show', open);
-  $('#mobile-menu').setAttribute('aria-expanded', String(open));
+  setMobileNavState(!$('#sidebar').classList.contains('open'));
 }
 
 function openHelp() {
@@ -707,11 +741,13 @@ class PdfWriter {
 
   row(label, value) {
     if (value === undefined || value === null || String(value).trim() === '') return;
-    const valueLines = wrapMixed(String(value), 330, this.fonts, 14);
-    const rowHeight = Math.max(22, valueLines.length * 20) + 5;
+    const labelLines = wrapMixed(label, this.width - this.margin * 2, this.fonts, 11);
+    const valueLines = wrapMixed(String(value), this.width - this.margin * 2, this.fonts, 14);
+    const rowHeight = labelLines.length * 14 + valueLines.length * 20 + 10;
     this.ensure(rowHeight);
-    drawMixedText(this.page, `${label}:`, this.margin, this.y, 14, this.fonts, rgb(0.38, 0.45, 0.41));
-    valueLines.forEach((line, index) => drawMixedText(this.page, line, 205, this.y - index * 20, 14, this.fonts, rgb(0.12, 0.17, 0.14)));
+    labelLines.forEach((line, index) => drawMixedText(this.page, index === 0 ? `${line}:` : line, this.margin, this.y - index * 14, 11, this.fonts, rgb(0.38, 0.45, 0.41)));
+    const valueY = this.y - labelLines.length * 14 - 3;
+    valueLines.forEach((line, index) => drawMixedText(this.page, line, this.margin, valueY - index * 20, 14, this.fonts, rgb(0.12, 0.17, 0.14)));
     this.y -= rowHeight;
   }
 
@@ -730,10 +766,39 @@ class PdfWriter {
 
 async function getPdfFonts(pdf) {
   pdf.registerFontkit(fontkit);
-  if (!pdfFontBytesPromise) pdfFontBytesPromise = fetch('assets/NotoSerifTC.woff').then(response => { if (!response.ok) throw new Error('Chinese font could not be loaded'); return response.arrayBuffer(); });
+  if (!pdfFontBytesPromise) {
+    pdfFontBytesPromise = loadPdfFontBytes().catch(error => {
+      pdfFontBytesPromise = undefined;
+      throw error;
+    });
+  }
   const [cjkBytes, times] = await Promise.all([pdfFontBytesPromise, pdf.embedFont(StandardFonts.TimesRoman)]);
-  const cjk = await pdf.embedFont(cjkBytes, { subset: true });
+  // Deng.ttf is already subsetted for the app's Traditional Chinese text. Running
+  // pdf-lib's subsetter a second time drops glyph mappings in some PDF viewers.
+  const cjk = await pdf.embedFont(cjkBytes, { subset: false });
   return { cjk, times };
+}
+
+function decodeEmbeddedFont(base64) {
+  if (!base64 || typeof atob !== 'function') return undefined;
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes.buffer;
+}
+
+function loadPdfFontBytes() {
+  try {
+    const embedded = decodeEmbeddedFont(globalThis.__CLIENTFOLIO_FONT_DATA__);
+    if (embedded) return Promise.resolve(embedded);
+  } catch (error) {
+    console.warn('Embedded Chinese font could not be decoded', error);
+  }
+  if (typeof fetch !== 'function') return Promise.reject(new Error('Chinese font could not be loaded'));
+  return fetch('assets/Deng.ttf').then(response => {
+    if (!response.ok) throw new Error('Chinese font could not be loaded');
+    return response.arrayBuffer();
+  });
 }
 
 async function createPdfWriter() {
@@ -803,21 +868,26 @@ async function downloadMeetingPdf(report, client) {
   [['討論內容 / Discussion', report.discussion], ['客戶目前情況 / Client situation', report.situation], ['需要及建議 / Needs and recommendations', report.recommendations]].forEach(([label, value]) => writer.row(label, value));
   writer.section('下一步 / Next steps');
   [['已同意的行動 / Actions agreed', report.actions], ['下次跟進 / Follow-up', formatDateDisplay(report.followup)]].forEach(([label, value]) => writer.row(label, value && value !== '未設定 / Not set' ? value : ''));
-  const attachments = report.attachments || [];
-  for (const attachment of attachments) {
-    if (!attachment.data?.startsWith('data:image')) continue;
-    try {
-      const image = attachment.data.startsWith('data:image/png') ? await pdf.embedPng(attachment.data) : await pdf.embedJpg(attachment.data);
-      writer.newPage();
-      drawMixedText(writer.page, `ATTACHED: ${attachment.name}`, writer.margin, 786, 14, fonts, rgb(0.12, 0.17, 0.14));
-      drawMixedText(writer.page, '相片附件 / Photo attachment', writer.margin, 761, 12, fonts, rgb(0.45, 0.51, 0.47));
-      const scale = Math.min(490 / image.width, 650 / image.height, 1);
-      writer.page.drawImage(image, { x: writer.margin, y: 82, width: image.width * scale, height: image.height * scale });
-    } catch (error) {
-      console.warn('Unable to add attachment to PDF', error);
-      writer.newPage();
-      writer.title(`ATTACHED: ${attachment.name}`, '相片附件 / Photo attachment');
-      writer.muted('此相片格式未能加入 PDF，但已保存在報告記錄內。 / The image format could not be embedded, but it remains in the saved report.');
+  const attachments = (report.attachments || []).filter(attachment => attachment.data?.startsWith('data:image'));
+  for (let pageStart = 0; pageStart < attachments.length; pageStart += 3) {
+    writer.newPage();
+    drawMixedText(writer.page, 'ATTACHED: 相片附件 / Photo attachments', writer.margin, 786, 14, fonts, rgb(0.12, 0.17, 0.14));
+    drawMixedText(writer.page, `${displayClientName(client)} · ${formatDateDisplay(report.date || report.updatedAt)}`, writer.margin, 761, 11, fonts, rgb(0.45, 0.51, 0.47));
+    let slotTop = 726;
+    for (const attachment of attachments.slice(pageStart, pageStart + 3)) {
+      try {
+        const image = attachment.data.startsWith('data:image/png') ? await pdf.embedPng(attachment.data) : await pdf.embedJpg(attachment.data);
+        drawMixedText(writer.page, `ATTACHED: ${attachment.name}`, writer.margin, slotTop, 10, fonts, rgb(0.38, 0.45, 0.41));
+        const scale = Math.min(490 / image.width, 178 / image.height, 1);
+        const width = image.width * scale;
+        const height = image.height * scale;
+        writer.page.drawImage(image, { x: writer.margin + (490 - width) / 2, y: slotTop - 14 - height, width, height });
+      } catch (error) {
+        console.warn('Unable to add attachment to PDF', error);
+        drawMixedText(writer.page, `ATTACHED: ${attachment.name}`, writer.margin, slotTop, 10, fonts, rgb(0.65, 0.35, 0.30));
+        drawMixedText(writer.page, '相片格式未能加入 PDF / Image format could not be embedded', writer.margin, slotTop - 28, 11, fonts, rgb(0.45, 0.51, 0.47));
+      }
+      slotTop -= 224;
     }
   }
   writer.footers();
@@ -826,6 +896,7 @@ async function downloadMeetingPdf(report, client) {
 
 async function handleClientSubmit(event) {
   event.preventDefault();
+  const form = event.currentTarget;
   const data = Object.fromEntries(new FormData(event.currentTarget));
   const name = data.name.trim() || '未命名客戶 / Untitled client';
   const now = nowIso();
@@ -838,12 +909,16 @@ async function handleClientSubmit(event) {
   activeClientId = client.id;
   persist();
   renderAll();
+  setPdfBusy(form, true);
+  saved('正在產生客戶 PDF... / Preparing client PDF...', 12000);
   try {
     await downloadClientPdf(client);
     saved('客戶已儲存，客戶 PDF 已下載。 / Client saved and PDF downloaded.');
   } catch (error) {
     console.error(error);
     saved('客戶已儲存，但 PDF 下載失敗。請稍後再試。 / Client saved; PDF download failed.');
+  } finally {
+    setPdfBusy(form, false);
   }
   resetClientForm();
   go('client-detail');
@@ -851,6 +926,7 @@ async function handleClientSubmit(event) {
 
 async function handleReportSubmit(event) {
   event.preventDefault();
+  const form = event.currentTarget;
   const data = Object.fromEntries(new FormData(event.currentTarget));
   const client = getClient(data.clientId);
   if (!client) { saved('請先選擇客戶。 / Please choose a client first.'); return; }
@@ -867,12 +943,16 @@ async function handleReportSubmit(event) {
   client.updatedAt = report.updatedAt;
   persist();
   renderAll();
+  setPdfBusy(form, true);
+  saved('正在產生會面 PDF... / Preparing meeting PDF...', 12000);
   try {
     await downloadMeetingPdf(report, client);
     saved(existing ? '會面報告已更新，最新 PDF 已下載。 / Report updated and PDF downloaded.' : '會面報告已儲存，PDF 已下載。 / Report saved and PDF downloaded.');
   } catch (error) {
     console.error(error);
     saved('會面報告已儲存，但 PDF 下載失敗。 / Report saved; PDF download failed.');
+  } finally {
+    setPdfBusy(form, false);
   }
   activeClientId = client.id;
   currentAttachments = [];
@@ -886,6 +966,20 @@ async function handleDownloadClient(clientId) {
   if (!client) return;
   try { await downloadClientPdf(client); saved('客戶 PDF 已下載。 / Client PDF downloaded.'); }
   catch (error) { console.error(error); saved('PDF 下載失敗，請稍後再試。 / PDF download failed.'); }
+}
+
+function deleteClient(clientId) {
+  const client = getClient(clientId);
+  if (!client) return;
+  const confirmed = window.confirm(`確定要刪除 ${displayClientName(client)}？\n\n這會同時刪除該客戶的保單資料及會面報告。\nDelete this client, policies and meeting reports?`);
+  if (!confirmed) return;
+  clients = clients.filter(item => item.id !== clientId);
+  reports = reports.filter(report => report.clientId !== clientId);
+  if (activeClientId === clientId) activeClientId = '';
+  persist();
+  renderAll();
+  go('clients');
+  saved('客戶及相關報告已刪除。 / Client and linked reports deleted.');
 }
 
 async function handleDownloadReport(reportId) {
@@ -920,6 +1014,7 @@ document.addEventListener('click', event => {
     const name = action.dataset.action;
     if (name === 'open-client') { activeClientId = action.dataset.clientId; renderClientDetail(activeClientId); go('client-detail'); }
     if (name === 'download-client') void handleDownloadClient(action.dataset.clientId);
+    if (name === 'delete-client') deleteClient(action.dataset.clientId);
     if (name === 'new-report') openNewReport(action.dataset.clientId || '');
     if (name === 'edit-report') openReportForEdit(action.dataset.reportId);
     if (name === 'download-report') void handleDownloadReport(action.dataset.reportId);
@@ -991,3 +1086,10 @@ resetReportForm();
 renderAll();
 const initialPage = window.location.hash.replace('#', '');
 if (['home', 'clients', 'new-client', 'reports', 'calendar'].includes(initialPage)) go(initialPage);
+closeMobileNav();
+if (typeof fetch === 'function' || globalThis.__CLIENTFOLIO_FONT_DATA__) {
+  pdfFontBytesPromise = loadPdfFontBytes().catch(() => {
+    pdfFontBytesPromise = undefined;
+    return undefined;
+  });
+}
