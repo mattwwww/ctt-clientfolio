@@ -146,6 +146,14 @@ input, textarea, select { display: block; width: 100%; margin-top: 8px; border: 
 input::placeholder, textarea::placeholder { color: #a8b0aa; }
 textarea { min-height: 100px; resize: vertical; }
 select { color: #50645a; }
+.maturity-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 9px; }
+.maturity-controls > input { min-width: 0; }
+.maturity-field { min-width: 0; }
+.maturity-label { display: block; font-size: 12px; font-weight: 700; color: #43534b; }
+.maturity-label small { display: block; color: var(--muted); font-weight: 400; margin-top: 3px; }
+.lifetime-option { display: flex; align-items: center; gap: 6px; min-height: 43px; padding: 0 2px 0 0; color: var(--green); font-size: 12px; font-weight: 700; white-space: nowrap; cursor: pointer; }
+.lifetime-option input[type="checkbox"] { width: 18px; height: 18px; min-height: 18px; margin: 0; accent-color: var(--green); }
+.maturity-controls > input:disabled { background: #f2f5f2; color: var(--muted); }
 .wide { grid-column: 1 / -1; }
 .section-heading-row { margin-bottom: 20px; }
 .section-heading-row > div { min-width: 0; }
@@ -161,6 +169,7 @@ select { color: #50645a; }
 .add-policy { margin-top: 3px; }
 .form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 5px; }
 .form-actions .primary, .form-actions .outline { min-height: 46px; }
+.client-form-actions .primary, .client-form-actions .outline { min-width: 0; }
 
 .detail-heading { align-items: flex-start; }
 .detail-title { flex: 1; min-width: 0; }
@@ -258,6 +267,10 @@ dd { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
   .form-actions { position: sticky; bottom: 0; z-index: 5; background: var(--canvas); padding: 14px 0 calc(14px + env(safe-area-inset-bottom)); }
   .form-actions .outline, .form-actions .primary { flex: 1; padding-left: 8px; padding-right: 8px; }
   .form-actions .primary span, .form-actions .outline span { display: none; }
+  .client-form-actions { display: grid; grid-template-columns: .8fr 1fr 1fr; gap: 8px; }
+  .client-form-actions .outline, .client-form-actions .primary { width: 100%; flex: initial; }
+  .maturity-controls { grid-template-columns: 1fr; gap: 6px; }
+  .lifetime-option { min-height: 28px; }
   .detail-row { grid-template-columns: minmax(115px, .8fr) minmax(0, 1.3fr); }
   .detail-heading .back { position: absolute; }
   .detail-title { padding-left: 50px; }

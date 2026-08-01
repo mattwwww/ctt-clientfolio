@@ -74,7 +74,8 @@ const seedReports = [
 const emptyPolicy = () => ({
   id: uid('policy'), currency: 'HKD', coverageType: '', company: '', policyNumber: '', policyName: '', policyStartDate: '',
   sumAssured: '', contributionAmount: '', contributionFrequency: 'monthly', totalContribution: '', contributionTerm: '',
-  contributionMaturityDate: '', coverageEndDate: '', policyOwner: '', insuredPerson: '', beneficiary: '', cashValue: '', projectedValue: '', notes: ''
+  contributionMaturityDate: '', contributionMaturityLifetime: false, coverageEndDate: '', coverageEndLifetime: false,
+  policyOwner: '', insuredPerson: '', beneficiary: '', cashValue: '', projectedValue: '', notes: ''
 });
 
 function uid(prefix = 'item') {
@@ -140,6 +141,10 @@ function formatDateDisplay(value) {
   return `${zh} / ${en}`;
 }
 
+function formatMaturityDisplay(policy, dateField, lifetimeField) {
+  return policy?.[lifetimeField] ? '終身 / Lifetime' : formatDateDisplay(policy?.[dateField]);
+}
+
 function formatDateShort(value) {
   const date = parseDateValue(value);
   return date ? new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: 'short', day: '2-digit' }).format(date) : (value || '—');
@@ -163,8 +168,18 @@ function selectedAttribute(selected, value) {
   return String(selected || '') === String(value || '') ? ' selected' : '';
 }
 
+function booleanValue(value) {
+  return value === true || value === 1 || value === '1' || value === 'true' || value === 'on';
+}
+
+function isLifetimeValue(value) {
+  const text = String(value || '').trim().toLowerCase();
+  return text === '終身' || text === 'lifetime';
+}
+
 function hasPolicyValue(policy) {
-  return ['coverageType', 'company', 'policyNumber', 'policyName', 'policyStartDate', 'sumAssured', 'contributionAmount', 'totalContribution', 'contributionTerm', 'contributionMaturityDate', 'coverageEndDate', 'policyOwner', 'insuredPerson', 'beneficiary', 'cashValue', 'projectedValue', 'notes'].some(key => String(policy?.[key] || '').trim());
+  return ['coverageType', 'company', 'policyNumber', 'policyName', 'policyStartDate', 'sumAssured', 'contributionAmount', 'totalContribution', 'contributionTerm', 'contributionMaturityDate', 'coverageEndDate', 'policyOwner', 'insuredPerson', 'beneficiary', 'cashValue', 'projectedValue', 'notes'].some(key => String(policy?.[key] || '').trim())
+    || Boolean(policy?.contributionMaturityLifetime || policy?.coverageEndLifetime);
 }
 
 function normalisePolicy(raw = {}, index = 0) {
@@ -175,9 +190,15 @@ function normalisePolicy(raw = {}, index = 0) {
     else if (raw.annualContribution) { contributionAmount = raw.annualContribution; contributionFrequency = 'annual'; }
     else if (raw.lumpSumContribution) { contributionAmount = raw.lumpSumContribution; contributionFrequency = 'lump-sum'; }
   }
+  const contributionMaturityLifetime = booleanValue(raw.contributionMaturityLifetime) || isLifetimeValue(raw.contributionMaturityDate);
+  const coverageEndLifetime = booleanValue(raw.coverageEndLifetime) || isLifetimeValue(raw.coverageEndDate);
   return {
     ...emptyPolicy(), ...raw, id: raw.id || uid(`policy-${index}`), contributionAmount, contributionFrequency,
-    currency: raw.currency || 'HKD'
+    currency: raw.currency || 'HKD',
+    contributionMaturityLifetime,
+    contributionMaturityDate: contributionMaturityLifetime ? '' : (raw.contributionMaturityDate || ''),
+    coverageEndLifetime,
+    coverageEndDate: coverageEndLifetime ? '' : (raw.coverageEndDate || '')
   };
 }
 
@@ -230,6 +251,7 @@ let searchTerm = '';
 let coverageFilter = '';
 let currencyFilter = '';
 let activeClientId = '';
+let savedClientId = '';
 let currentAttachments = [];
 let pendingAttachments = [];
 let pdfFontBytesPromise;
@@ -285,13 +307,24 @@ function frequencyLabel(value) {
   return CONTRIBUTION_FREQUENCIES.find(item => item[0] === value)?.[1] || value || '—';
 }
 
+function policyFieldValue(field) {
+  return field.type === 'checkbox' ? field.checked : field.value.trim();
+}
+
+function collectPolicyCard(card) {
+  const policy = { id: card.dataset.policyId || uid('policy') };
+  $$('[data-field]', card).forEach(field => { policy[field.dataset.field] = policyFieldValue(field); });
+  return normalisePolicy(policy);
+}
+
 function policyMarkup(policy = emptyPolicy(), index = 0, total = 1) {
   const p = normalisePolicy(policy, index);
   const coverageOptions = `<option value="">請選擇 / Select a type</option>${COVERAGE_TYPES.map(option => `<option${selectedAttribute(p.coverageType, option)}>${escapeHtml(option)}</option>`).join('')}`;
   const frequencyOptions = CONTRIBUTION_FREQUENCIES.map(([value, label]) => `<option value="${value}"${selectedAttribute(p.contributionFrequency, value)}>${label}</option>`).join('');
   const currencyOptions = ['HKD', 'USD', 'CNY', '其他 / Other'].map(option => `<option value="${option}"${selectedAttribute(p.currency, option)}>${option}</option>`).join('');
   const input = (field, label, english, type = 'text', extra = '') => `<label>${label}<small>${english}</small><input data-field="${field}" type="${type}" value="${escapeHtml(p[field])}" ${extra}></label>`;
-  return `<article class="policy-card" data-policy-index="${index}">
+  const maturityInput = (field, label, english, lifetimeField) => `<div class="maturity-field"><span class="maturity-label">${label}<small>${english}</small></span><div class="maturity-controls"><input data-field="${field}" type="date" value="${escapeHtml(p[field])}"${p[lifetimeField] ? ' disabled' : ''}><label class="lifetime-option"><input data-field="${lifetimeField}" type="checkbox" aria-label="終身 / Lifetime" data-lifetime-target="${field}"${p[lifetimeField] ? ' checked' : ''}><span>終身 / Lifetime</span></label></div></div>`;
+  return `<article class="policy-card" data-policy-index="${index}" data-policy-id="${escapeHtml(p.id)}">
     <div class="policy-card-heading"><div><h3>保單 ${index + 1} <span>Policy ${index + 1}</span></h3><p>貨幣先行，金額會顯示為 $1000 USD。<span>Amounts appear as $1000 USD.</span></p></div>${total > 1 ? `<button type="button" class="remove-link" data-action="remove-policy" data-policy-index="${index}">移除 / Remove</button>` : ''}</div>
     <div class="form-grid policy-grid">
       <label>貨幣 <small>Currency</small><select data-field="currency">${currencyOptions}</select></label>
@@ -305,8 +338,8 @@ function policyMarkup(policy = emptyPolicy(), index = 0, total = 1) {
       <label>供款頻率 <small>Contribution frequency</small><select data-field="contributionFrequency">${frequencyOptions}</select></label>
       ${input('totalContribution', '供款總額', 'Total contribution', 'text', 'inputmode="decimal"')}
       ${input('contributionTerm', '供款年期', 'Contribution term')}
-      ${input('contributionMaturityDate', '供款到期日', 'Contribution maturity date', 'date')}
-      ${input('coverageEndDate', '保障到期日', 'Coverage maturity date', 'date')}
+      ${maturityInput('contributionMaturityDate', '供款到期日', 'Contribution maturity date', 'contributionMaturityLifetime')}
+      ${maturityInput('coverageEndDate', '保障到期日', 'Coverage maturity date', 'coverageEndLifetime')}
       ${input('policyOwner', '保單持有人', 'Policy owner')}
       ${input('insuredPerson', '受保人', 'Life insured')}
       ${input('beneficiary', '受益人', 'Beneficiary')}
@@ -324,11 +357,7 @@ function renderPolicyList(policies = []) {
 }
 
 function collectPolicies() {
-  return $$('.policy-card').map(card => {
-    const policy = { id: uid('policy') };
-    $$('[data-field]', card).forEach(field => { policy[field.dataset.field] = field.value.trim(); });
-    return normalisePolicy(policy);
-  }).filter(hasPolicyValue);
+  return $$('.policy-card').map(collectPolicyCard).filter(hasPolicyValue);
 }
 
 function renderOverview() {
@@ -443,8 +472,8 @@ function policyDetailMarkup(policy, index) {
     ['供款額 / Contribution', `${formatMoney(policy.contributionAmount, policy.currency)}${policy.contributionAmount ? ` · ${frequencyLabel(policy.contributionFrequency)}` : ''}`],
     ['供款總額 / Total contribution', formatMoney(policy.totalContribution, policy.currency)],
     ['供款年期 / Contribution term', policy.contributionTerm],
-    ['供款到期日 / Contribution maturity', formatDateDisplay(policy.contributionMaturityDate)],
-    ['保障到期日 / Coverage maturity', formatDateDisplay(policy.coverageEndDate)],
+    ['供款到期日 / Contribution maturity', formatMaturityDisplay(policy, 'contributionMaturityDate', 'contributionMaturityLifetime')],
+    ['保障到期日 / Coverage maturity', formatMaturityDisplay(policy, 'coverageEndDate', 'coverageEndLifetime')],
     ['保單持有人 / Policy owner', policy.policyOwner],
     ['受保人 / Life insured', policy.insuredPerson],
     ['受益人 / Beneficiary', policy.beneficiary],
@@ -530,7 +559,11 @@ function openReportForEdit(reportId) {
 }
 
 function resetClientForm() {
-  $('#client-form').reset();
+  const form = $('#client-form');
+  form.reset();
+  savedClientId = '';
+  delete form.dataset.savedClientId;
+  setClientDownloadState('');
   renderPolicyList([]);
 }
 
@@ -570,6 +603,27 @@ function setPdfBusy(form, busy) {
   }
 }
 
+function setClientDownloadState(clientId) {
+  const button = $('#download-client-pdf');
+  if (!button) return;
+  const enabled = Boolean(clientId);
+  button.disabled = !enabled;
+  button.setAttribute('aria-disabled', String(!enabled));
+  button.title = enabled ? '下載已儲存客戶的 PDF / Download the saved client PDF' : '請先儲存客戶 / Save the client first';
+}
+
+function setButtonBusy(button, busy, busyLabel = '正在產生 PDF... <span>Preparing PDF...</span>') {
+  if (!button) return;
+  if (busy) {
+    if (!button.dataset.originalLabel) button.dataset.originalLabel = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = busyLabel;
+  } else {
+    button.disabled = false;
+    if (button.dataset.originalLabel) button.innerHTML = button.dataset.originalLabel;
+  }
+}
+
 function setMobileNavState(open) {
   const sidebar = $('#sidebar');
   const isMobile = window.matchMedia('(max-width: 800px)').matches;
@@ -605,9 +659,7 @@ function removePolicy(index) {
   const cards = $$('.policy-card');
   if (cards.length <= 1) { saved('至少保留一個空白保單項目 / Keep one empty policy card.'); return; }
   const values = cards.map(card => {
-    const policy = { id: uid('policy') };
-    $$('[data-field]', card).forEach(field => { policy[field.dataset.field] = field.value.trim(); });
-    return policy;
+    return collectPolicyCard(card);
   });
   values.splice(index, 1);
   renderPolicyList(values);
@@ -845,8 +897,8 @@ function writeClientPdf(writer, client) {
       ['貨幣 / Currency', policy.currency], ['保障類別 / Coverage type', policy.coverageType], ['保險公司 / Insurer', policy.company], ['保單編號 / Policy number', policy.policyNumber],
       ['保單名稱 / Policy name', policy.policyName], ['生效日期 / Effective date', formatDateDisplay(policy.policyStartDate)], ['保障額 / Sum assured', formatMoney(policy.sumAssured, policy.currency)],
       ['供款額 / Contribution', policy.contributionAmount ? `${formatMoney(policy.contributionAmount, policy.currency)} · ${frequencyLabel(policy.contributionFrequency)}` : ''],
-      ['供款總額 / Total contribution', formatMoney(policy.totalContribution, policy.currency)], ['供款年期 / Contribution term', policy.contributionTerm], ['供款到期日 / Contribution maturity', formatDateDisplay(policy.contributionMaturityDate)],
-      ['保障到期日 / Coverage maturity', formatDateDisplay(policy.coverageEndDate)], ['保單持有人 / Policy owner', policy.policyOwner], ['受保人 / Life insured', policy.insuredPerson],
+      ['供款總額 / Total contribution', formatMoney(policy.totalContribution, policy.currency)], ['供款年期 / Contribution term', policy.contributionTerm], ['供款到期日 / Contribution maturity', formatMaturityDisplay(policy, 'contributionMaturityDate', 'contributionMaturityLifetime')],
+      ['保障到期日 / Coverage maturity', formatMaturityDisplay(policy, 'coverageEndDate', 'coverageEndLifetime')], ['保單持有人 / Policy owner', policy.policyOwner], ['受保人 / Life insured', policy.insuredPerson],
       ['受益人 / Beneficiary', policy.beneficiary], ['現金價值 / Cash value', formatMoney(policy.cashValue, policy.currency)], ['預計價值 / Projected value', formatMoney(policy.projectedValue, policy.currency)], ['備註 / Notes', policy.notes]
     ].forEach(([label, value]) => writer.row(label, value && value !== '未設定 / Not set' ? value : ''));
   });
@@ -900,28 +952,43 @@ async function handleClientSubmit(event) {
   const data = Object.fromEntries(new FormData(event.currentTarget));
   const name = data.name.trim() || '未命名客戶 / Untitled client';
   const now = nowIso();
+  const existing = form.dataset.savedClientId ? getClient(form.dataset.savedClientId) : null;
   const client = {
-    id: uid('client'), name, chineseName: data.chineseName.trim(), birthDate: data.birthDate, phone: data.phone.trim(), email: data.email.trim(),
+    id: existing?.id || uid('client'), name, chineseName: data.chineseName.trim(), birthDate: data.birthDate, phone: data.phone.trim(), email: data.email.trim(),
     idNumber: data.idNumber.trim(), address: data.address.trim(), occupation: data.occupation.trim(), notes: data.notes.trim(),
-    createdAt: now, updatedAt: now, policies: collectPolicies()
+    createdAt: existing?.createdAt || now, updatedAt: now, policies: collectPolicies()
   };
-  clients.unshift(client);
+  if (existing) clients = clients.map(item => item.id === existing.id ? client : item);
+  else clients.unshift(client);
   activeClientId = client.id;
+  savedClientId = client.id;
+  form.dataset.savedClientId = client.id;
+  setClientDownloadState(client.id);
   persist();
   renderAll();
-  setPdfBusy(form, true);
+  saved(existing ? '客戶資料已更新。 / Client details updated.' : '客戶已儲存。現在可以下載 PDF。 / Client saved. You can now download the PDF.');
+}
+
+async function handleNewClientPdfDownload() {
+  const clientId = $('#client-form')?.dataset.savedClientId || savedClientId;
+  const client = getClient(clientId);
+  const button = $('#download-client-pdf');
+  if (!client) {
+    saved('請先儲存客戶。 / Please save the client first.');
+    return;
+  }
+  setButtonBusy(button, true);
   saved('正在產生客戶 PDF... / Preparing client PDF...', 12000);
   try {
     await downloadClientPdf(client);
-    saved('客戶已儲存，客戶 PDF 已下載。 / Client saved and PDF downloaded.');
+    saved('客戶 PDF 已下載。 / Client PDF downloaded.');
   } catch (error) {
     console.error(error);
-    saved('客戶已儲存，但 PDF 下載失敗。請稍後再試。 / Client saved; PDF download failed.');
+    saved('PDF 下載失敗，請稍後再試。 / PDF download failed.');
   } finally {
-    setPdfBusy(form, false);
+    setButtonBusy(button, false);
+    setClientDownloadState(client.id);
   }
-  resetClientForm();
-  go('client-detail');
 }
 
 async function handleReportSubmit(event) {
@@ -1014,6 +1081,7 @@ document.addEventListener('click', event => {
     const name = action.dataset.action;
     if (name === 'open-client') { activeClientId = action.dataset.clientId; renderClientDetail(activeClientId); go('client-detail'); }
     if (name === 'download-client') void handleDownloadClient(action.dataset.clientId);
+    if (name === 'download-new-client-pdf') void handleNewClientPdfDownload();
     if (name === 'delete-client') deleteClient(action.dataset.clientId);
     if (name === 'new-report') openNewReport(action.dataset.clientId || '');
     if (name === 'edit-report') openReportForEdit(action.dataset.reportId);
@@ -1021,7 +1089,7 @@ document.addEventListener('click', event => {
     if (name === 'remove-policy') removePolicy(Number(action.dataset.policyIndex));
     if (name === 'remove-attachment') { currentAttachments = currentAttachments.filter(item => item.id !== action.dataset.attachmentId); renderAttachmentEditors(); }
     if (name === 'cancel-report') { if (activeClientId) { renderClientDetail(activeClientId); go('client-detail'); } else go('home'); }
-    if (name === 'add-policy') { const values = $$('.policy-card').map(card => { const policy = { id: uid('policy') }; $$('[data-field]', card).forEach(field => { policy[field.dataset.field] = field.value.trim(); }); return policy; }); values.push(emptyPolicy()); renderPolicyList(values); }
+    if (name === 'add-policy') { const values = $$('.policy-card').map(collectPolicyCard); values.push(emptyPolicy()); renderPolicyList(values); }
     return;
   }
 
@@ -1043,9 +1111,18 @@ $$('.nav-link').forEach(link => link.addEventListener('click', () => {
 $('#client-form').addEventListener('submit', handleClientSubmit);
 $('#report-form').addEventListener('submit', handleReportSubmit);
 $('#add-policy').addEventListener('click', () => {
-  const values = $$('.policy-card').map(card => { const policy = { id: uid('policy') }; $$('[data-field]', card).forEach(field => { policy[field.dataset.field] = field.value.trim(); }); return policy; });
+  const values = $$('.policy-card').map(collectPolicyCard);
   values.push(emptyPolicy());
   renderPolicyList(values);
+});
+
+document.addEventListener('change', event => {
+  const field = event.target.closest('[data-lifetime-target]');
+  if (!field) return;
+  const target = field.closest('.maturity-field')?.querySelector(`[data-field="${field.dataset.lifetimeTarget}"]`);
+  if (!target) return;
+  target.disabled = field.checked;
+  if (field.checked) target.value = '';
 });
 
 $('#report-attachments').addEventListener('change', async event => {
