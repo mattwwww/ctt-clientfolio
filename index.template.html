@@ -21,8 +21,8 @@
           <button class="nav-link" data-page="calendar"><span aria-hidden="true">□</span> 日程 <em>Calendar</em></button>
         </nav>
         <div class="sidebar-footer">
-          <div class="avatar">MC</div>
-          <div><strong>Matthew Chan</strong><small>Financial consultant / 理財顧問</small></div>
+          <div class="avatar">AG</div>
+          <div><strong>agent</strong><small>Financial consultant / 理財顧問</small></div>
         </div>
       </aside>
 
@@ -40,7 +40,7 @@
           <div class="page-heading">
             <div>
               <p class="eyebrow" id="today-label">今天 / Today</p>
-              <h1>下午好，Matthew。<span class="heading-en">Good afternoon, Matthew.</span></h1>
+              <h1>下午好，agent。<span class="heading-en">Good afternoon, agent.</span></h1>
               <p class="subtext">這裡是你的客戶活動摘要。<span>Here is a quick look at your client activity.</span></p>
             </div>
             <button class="primary" data-go="new-client">＋ 新增客戶 <span>Add new client</span></button>
@@ -154,7 +154,8 @@
             </div>
             <div class="form-actions">
               <button type="button" class="outline" data-action="cancel-report">取消 <span>Cancel</span></button>
-              <button type="submit" class="primary">儲存報告並下載 PDF <span>Save report &amp; download PDF</span></button>
+              <button type="submit" class="primary">儲存報告 <span>Save report</span></button>
+              <button type="button" class="outline" id="download-report-pdf" data-action="download-new-report-pdf" disabled aria-disabled="true">下載 PDF <span>Download PDF</span></button>
             </div>
           </form>
         </section>
@@ -179,7 +180,7 @@
       <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="help-title">
         <button class="modal-close" id="help-close" aria-label="關閉 / Close">×</button>
         <h2 id="help-title">使用說明 <span>How it works</span></h2>
-        <p>新增客戶後，所有保單會放在同一份客戶 PDF。每次會面都可建立或重新開啟報告，儲存後會下載同一份報告名稱的最新 PDF。<span>Save client details and multiple policies together, then create or edit linked meeting reports. Each save downloads the latest PDF.</span></p>
+        <p>新增客戶後，所有保單會放在同一份客戶 PDF。每次會面都可建立或重新開啟報告，儲存及下載 PDF 可分開進行。<span>Save client details and multiple policies together, then create or edit linked meeting reports. Saving and downloading the PDF are separate actions.</span></p>
         <p>資料會儲存在此裝置的瀏覽器內，適合在 iPhone 或 iPad 上快速輸入。<span>Records are stored locally in this browser for quick entry on iPhone or iPad.</span></p>
       </div>
     </div>

@@ -52417,6 +52417,7 @@
   var currencyFilter = "";
   var activeClientId = "";
   var savedClientId = "";
+  var savedReportId = "";
   var currentAttachments = [];
   var pendingAttachments = [];
   var pdfFontBytesPromise;
@@ -52651,6 +52652,9 @@
     const form = $("#report-form");
     form.reset();
     $("#report-id").value = "";
+    savedReportId = "";
+    delete form.dataset.savedReportId;
+    setReportDownloadState("");
     renderReportClientOptions(clientId);
     $("#report-client").value = clientId || "";
     form.elements.date.value = todayIso();
@@ -52672,6 +52676,8 @@
     form.reset();
     renderReportClientOptions(report.clientId);
     $("#report-id").value = report.id;
+    savedReportId = report.id;
+    form.dataset.savedReportId = report.id;
     form.elements.clientId.value = report.clientId;
     form.elements.date.value = report.date || "";
     form.elements.topic.value = report.topic || "";
@@ -52683,6 +52689,7 @@
     form.elements.followup.value = report.followup || "";
     currentAttachments = (report.attachments || []).map(normaliseAttachment);
     pendingAttachments = [];
+    setReportDownloadState(report.id);
     setReportTitle(true);
     renderAttachmentEditors();
     go("reports");
@@ -52714,20 +52721,6 @@
     window.clearTimeout(saved.timer);
     saved.timer = window.setTimeout(() => toast.classList.remove("show"), duration);
   }
-  function setPdfBusy(form, busy) {
-    const submit = form.querySelector('button[type="submit"]');
-    if (!submit) return;
-    if (busy) {
-      if (!submit.dataset.originalLabel) submit.dataset.originalLabel = submit.innerHTML;
-      submit.disabled = true;
-      submit.innerHTML = "\u6B63\u5728\u7522\u751F PDF... <span>Preparing PDF...</span>";
-      form.setAttribute("aria-busy", "true");
-    } else {
-      submit.disabled = false;
-      if (submit.dataset.originalLabel) submit.innerHTML = submit.dataset.originalLabel;
-      form.removeAttribute("aria-busy");
-    }
-  }
   function setClientDownloadState(clientId) {
     const button = $("#download-client-pdf");
     if (!button) return;
@@ -52735,6 +52728,14 @@
     button.disabled = !enabled;
     button.setAttribute("aria-disabled", String(!enabled));
     button.title = enabled ? "\u4E0B\u8F09\u5DF2\u5132\u5B58\u5BA2\u6236\u7684 PDF / Download the saved client PDF" : "\u8ACB\u5148\u5132\u5B58\u5BA2\u6236 / Save the client first";
+  }
+  function setReportDownloadState(reportId) {
+    const button = $("#download-report-pdf");
+    if (!button) return;
+    const enabled = Boolean(reportId);
+    button.disabled = !enabled;
+    button.setAttribute("aria-disabled", String(!enabled));
+    button.title = enabled ? "\u4E0B\u8F09\u5DF2\u5132\u5B58\u6703\u9762\u5831\u544A\u7684 PDF / Download the saved meeting report PDF" : "\u8ACB\u5148\u5132\u5B58\u5831\u544A / Save the report first";
   }
   function setButtonBusy(button, busy, busyLabel = "\u6B63\u5728\u7522\u751F PDF... <span>Preparing PDF...</span>") {
     if (!button) return;
@@ -53147,23 +53148,16 @@
     else reports.unshift(report);
     client.updatedAt = report.updatedAt;
     persist();
-    renderAll();
-    setPdfBusy(form, true);
-    saved("\u6B63\u5728\u7522\u751F\u6703\u9762 PDF... / Preparing meeting PDF...", 12e3);
-    try {
-      await downloadMeetingPdf(report, client);
-      saved(existing ? "\u6703\u9762\u5831\u544A\u5DF2\u66F4\u65B0\uFF0C\u6700\u65B0 PDF \u5DF2\u4E0B\u8F09\u3002 / Report updated and PDF downloaded." : "\u6703\u9762\u5831\u544A\u5DF2\u5132\u5B58\uFF0CPDF \u5DF2\u4E0B\u8F09\u3002 / Report saved and PDF downloaded.");
-    } catch (error2) {
-      console.error(error2);
-      saved("\u6703\u9762\u5831\u544A\u5DF2\u5132\u5B58\uFF0C\u4F46 PDF \u4E0B\u8F09\u5931\u6557\u3002 / Report saved; PDF download failed.");
-    } finally {
-      setPdfBusy(form, false);
-    }
-    activeClientId = client.id;
-    currentAttachments = [];
+    savedReportId = report.id;
+    form.dataset.savedReportId = report.id;
+    $("#report-id").value = report.id;
+    currentAttachments = report.attachments;
     pendingAttachments = [];
-    renderClientDetail(client.id);
-    go("client-detail");
+    setReportDownloadState(report.id);
+    renderAttachmentEditors();
+    renderAll();
+    activeClientId = client.id;
+    saved(existing ? "\u6703\u9762\u5831\u544A\u5DF2\u66F4\u65B0\u3002 / Meeting report updated." : "\u6703\u9762\u5831\u544A\u5DF2\u5132\u5B58\u3002 / Meeting report saved.");
   }
   async function handleDownloadClient(clientId) {
     const client = getClient(clientId);
@@ -53174,6 +53168,29 @@
     } catch (error2) {
       console.error(error2);
       saved("PDF \u4E0B\u8F09\u5931\u6557\uFF0C\u8ACB\u7A0D\u5F8C\u518D\u8A66\u3002 / PDF download failed.");
+    }
+  }
+  async function handleNewReportPdfDownload() {
+    const form = $("#report-form");
+    const reportId = form?.dataset.savedReportId || $("#report-id")?.value || savedReportId;
+    const report = reports.find((item) => item.id === reportId);
+    const client = report && getClient(report.clientId);
+    const button = $("#download-report-pdf");
+    if (!report || !client) {
+      saved("\u8ACB\u5148\u5132\u5B58\u5831\u544A\u3002 / Please save the report first.");
+      return;
+    }
+    setButtonBusy(button, true);
+    saved("\u6B63\u5728\u7522\u751F\u6703\u9762 PDF... / Preparing meeting PDF...", 12e3);
+    try {
+      await downloadMeetingPdf(report, client);
+      saved("\u6703\u9762\u5831\u544A PDF \u5DF2\u4E0B\u8F09\u3002 / Meeting report PDF downloaded.");
+    } catch (error2) {
+      console.error(error2);
+      saved("PDF \u4E0B\u8F09\u5931\u6557\uFF0C\u8ACB\u7A0D\u5F8C\u518D\u8A66\u3002 / PDF download failed.");
+    } finally {
+      setButtonBusy(button, false);
+      setReportDownloadState(report.id);
     }
   }
   function deleteClient(clientId) {
@@ -53231,6 +53248,7 @@ Delete this client, policies and meeting reports?`);
       }
       if (name5 === "download-client") void handleDownloadClient(action.dataset.clientId);
       if (name5 === "download-new-client-pdf") void handleNewClientPdfDownload();
+      if (name5 === "download-new-report-pdf") void handleNewReportPdfDownload();
       if (name5 === "delete-client") deleteClient(action.dataset.clientId);
       if (name5 === "new-report") openNewReport(action.dataset.clientId || "");
       if (name5 === "edit-report") openReportForEdit(action.dataset.reportId);

@@ -252,6 +252,7 @@ let coverageFilter = '';
 let currencyFilter = '';
 let activeClientId = '';
 let savedClientId = '';
+let savedReportId = '';
 let currentAttachments = [];
 let pendingAttachments = [];
 let pdfFontBytesPromise;
@@ -519,6 +520,9 @@ function resetReportForm(clientId = '') {
   const form = $('#report-form');
   form.reset();
   $('#report-id').value = '';
+  savedReportId = '';
+  delete form.dataset.savedReportId;
+  setReportDownloadState('');
   renderReportClientOptions(clientId);
   $('#report-client').value = clientId || '';
   form.elements.date.value = todayIso();
@@ -542,6 +546,8 @@ function openReportForEdit(reportId) {
   form.reset();
   renderReportClientOptions(report.clientId);
   $('#report-id').value = report.id;
+  savedReportId = report.id;
+  form.dataset.savedReportId = report.id;
   form.elements.clientId.value = report.clientId;
   form.elements.date.value = report.date || '';
   form.elements.topic.value = report.topic || '';
@@ -553,6 +559,7 @@ function openReportForEdit(reportId) {
   form.elements.followup.value = report.followup || '';
   currentAttachments = (report.attachments || []).map(normaliseAttachment);
   pendingAttachments = [];
+  setReportDownloadState(report.id);
   setReportTitle(true);
   renderAttachmentEditors();
   go('reports');
@@ -610,6 +617,15 @@ function setClientDownloadState(clientId) {
   button.disabled = !enabled;
   button.setAttribute('aria-disabled', String(!enabled));
   button.title = enabled ? '下載已儲存客戶的 PDF / Download the saved client PDF' : '請先儲存客戶 / Save the client first';
+}
+
+function setReportDownloadState(reportId) {
+  const button = $('#download-report-pdf');
+  if (!button) return;
+  const enabled = Boolean(reportId);
+  button.disabled = !enabled;
+  button.setAttribute('aria-disabled', String(!enabled));
+  button.title = enabled ? '下載已儲存會面報告的 PDF / Download the saved meeting report PDF' : '請先儲存報告 / Save the report first';
 }
 
 function setButtonBusy(button, busy, busyLabel = '正在產生 PDF... <span>Preparing PDF...</span>') {
@@ -1009,23 +1025,16 @@ async function handleReportSubmit(event) {
   else reports.unshift(report);
   client.updatedAt = report.updatedAt;
   persist();
-  renderAll();
-  setPdfBusy(form, true);
-  saved('正在產生會面 PDF... / Preparing meeting PDF...', 12000);
-  try {
-    await downloadMeetingPdf(report, client);
-    saved(existing ? '會面報告已更新，最新 PDF 已下載。 / Report updated and PDF downloaded.' : '會面報告已儲存，PDF 已下載。 / Report saved and PDF downloaded.');
-  } catch (error) {
-    console.error(error);
-    saved('會面報告已儲存，但 PDF 下載失敗。 / Report saved; PDF download failed.');
-  } finally {
-    setPdfBusy(form, false);
-  }
-  activeClientId = client.id;
-  currentAttachments = [];
+  savedReportId = report.id;
+  form.dataset.savedReportId = report.id;
+  $('#report-id').value = report.id;
+  currentAttachments = report.attachments;
   pendingAttachments = [];
-  renderClientDetail(client.id);
-  go('client-detail');
+  setReportDownloadState(report.id);
+  renderAttachmentEditors();
+  renderAll();
+  activeClientId = client.id;
+  saved(existing ? '會面報告已更新。 / Meeting report updated.' : '會面報告已儲存。 / Meeting report saved.');
 }
 
 async function handleDownloadClient(clientId) {
@@ -1033,6 +1042,30 @@ async function handleDownloadClient(clientId) {
   if (!client) return;
   try { await downloadClientPdf(client); saved('客戶 PDF 已下載。 / Client PDF downloaded.'); }
   catch (error) { console.error(error); saved('PDF 下載失敗，請稍後再試。 / PDF download failed.'); }
+}
+
+async function handleNewReportPdfDownload() {
+  const form = $('#report-form');
+  const reportId = form?.dataset.savedReportId || $('#report-id')?.value || savedReportId;
+  const report = reports.find(item => item.id === reportId);
+  const client = report && getClient(report.clientId);
+  const button = $('#download-report-pdf');
+  if (!report || !client) {
+    saved('請先儲存報告。 / Please save the report first.');
+    return;
+  }
+  setButtonBusy(button, true);
+  saved('正在產生會面 PDF... / Preparing meeting PDF...', 12000);
+  try {
+    await downloadMeetingPdf(report, client);
+    saved('會面報告 PDF 已下載。 / Meeting report PDF downloaded.');
+  } catch (error) {
+    console.error(error);
+    saved('PDF 下載失敗，請稍後再試。 / PDF download failed.');
+  } finally {
+    setButtonBusy(button, false);
+    setReportDownloadState(report.id);
+  }
 }
 
 function deleteClient(clientId) {
@@ -1082,6 +1115,7 @@ document.addEventListener('click', event => {
     if (name === 'open-client') { activeClientId = action.dataset.clientId; renderClientDetail(activeClientId); go('client-detail'); }
     if (name === 'download-client') void handleDownloadClient(action.dataset.clientId);
     if (name === 'download-new-client-pdf') void handleNewClientPdfDownload();
+    if (name === 'download-new-report-pdf') void handleNewReportPdfDownload();
     if (name === 'delete-client') deleteClient(action.dataset.clientId);
     if (name === 'new-report') openNewReport(action.dataset.clientId || '');
     if (name === 'edit-report') openReportForEdit(action.dataset.reportId);
