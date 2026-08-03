@@ -53345,13 +53345,14 @@ dd { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
     return cursor;
   }
   var PdfWriter = class {
-    constructor(pdf, fonts) {
+    constructor(pdf, fonts, { width = 595, height = 842, margin = 52 } = {}) {
       this.pdf = pdf;
       this.fonts = fonts;
       this.pages = [];
-      this.width = 595;
-      this.height = 842;
-      this.margin = 52;
+      this.width = width;
+      this.height = height;
+      this.margin = margin;
+      this.contentBottom = 58;
       this.y = 0;
       this.page = null;
       this.newPage();
@@ -53359,10 +53360,10 @@ dd { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
     newPage() {
       this.page = this.pdf.addPage([this.width, this.height]);
       this.pages.push(this.page);
-      this.y = 786;
+      this.y = this.height - 56;
     }
     ensure(space = 24) {
-      if (this.y - space < 58) this.newPage();
+      if (this.y - space < this.contentBottom) this.newPage();
     }
     text(text, { size = 14, color = rgb(0.12, 0.17, 0.14), x = this.margin, maxWidth = this.width - this.margin * 2, gap = 6 } = {}) {
       const lines = wrapMixed(text, maxWidth, this.fonts, size);
@@ -53382,8 +53383,10 @@ dd { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
     }
     section(title2) {
       this.ensure(36);
-      this.page.drawRectangle({ x: 48, y: this.y - 5, width: 499, height: 24, color: rgb(0.91, 0.95, 0.92) });
-      drawMixedText(this.page, title2, 58, this.y + 2, 14, this.fonts, rgb(0.18, 0.35, 0.27));
+      const x = this.margin - 4;
+      const barY = this.y - 28;
+      this.page.drawRectangle({ x, y: barY, width: this.width - x * 2, height: 24, color: rgb(0.91, 0.95, 0.92) });
+      drawMixedText(this.page, title2, this.margin + 6, barY + 7, 14, this.fonts, rgb(0.18, 0.35, 0.27));
       this.y -= 35;
     }
     subheading(title2) {
@@ -53405,11 +53408,42 @@ dd { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
     muted(text) {
       this.text(text, { size: 14, color: rgb(0.45, 0.51, 0.47), gap: 7 });
     }
+    table(headers, rows, { columnWidths, headerFill = rgb(0.22, 0.34, 0.28), rowFill = rgb(1, 1, 1), borderColor = rgb(0.68, 0.73, 0.69), headerTextColor = rgb(1, 1, 1), headerSize = 7.2, bodySize = 7.1, cellPadding = 4, rowGap = 2 } = {}) {
+      const availableWidth = this.width - this.margin * 2;
+      const widthsTotal = columnWidths.reduce((sum2, width) => sum2 + width, 0);
+      const scale2 = availableWidth / widthsTotal;
+      const widths = columnWidths.map((width) => width * scale2);
+      const lineHeight = (size) => size + rowGap;
+      const drawRow = (values2, { header = false, fill: fill2 = rowFill } = {}) => {
+        const size = header ? headerSize : bodySize;
+        const lines = values2.map((value, index) => wrapMixed(String(value ?? ""), Math.max(8, widths[index] - cellPadding * 2), this.fonts, size));
+        const rowHeight = Math.max(header ? 27 : 23, Math.max(...lines.map((cellLines) => cellLines.length)) * lineHeight(size) + cellPadding * 2);
+        if (this.y - rowHeight < this.contentBottom) {
+          this.newPage();
+          if (!header) drawRow(headers, { header: true, fill: headerFill });
+        }
+        let x = this.margin;
+        lines.forEach((cellLines, index) => {
+          const width = widths[index];
+          this.page.drawRectangle({ x, y: this.y - rowHeight, width, height: rowHeight, color: fill2, borderColor, borderWidth: 0.45 });
+          cellLines.forEach((line, lineIndex) => drawMixedText(this.page, line, x + cellPadding, this.y - cellPadding - size - lineIndex * lineHeight(size), size, this.fonts, header ? headerTextColor : rgb(0.12, 0.17, 0.14)));
+          x += width;
+        });
+        this.y -= rowHeight;
+      };
+      drawRow(headers, { header: true, fill: headerFill });
+      rows.forEach((row, index) => {
+        const fill2 = typeof rowFill === "function" ? rowFill(row, index) : rowFill;
+        drawRow(row, { fill: fill2 });
+      });
+    }
     footers() {
       this.pages.forEach((page, index) => {
         page.drawLine({ start: { x: this.margin, y: 43 }, end: { x: this.width - this.margin, y: 43 }, thickness: 0.5, color: rgb(0.85, 0.88, 0.85) });
         drawMixedText(page, `Clientfolio \xB7 ${index + 1}`, this.margin, 28, 9, this.fonts, rgb(0.45, 0.51, 0.47));
-        drawMixedText(page, "\u8CC7\u6599\u7531\u672C\u6A5F\u7522\u751F / Generated locally", 370, 28, 9, this.fonts, rgb(0.45, 0.51, 0.47));
+        const footerText = "\u8CC7\u6599\u7531\u672C\u6A5F\u7522\u751F / Generated locally";
+        const footerWidth = mixedWidth(footerText, this.fonts, 9);
+        drawMixedText(page, footerText, this.width - this.margin - footerWidth, 28, 9, this.fonts, rgb(0.45, 0.51, 0.47));
       });
     }
   };
@@ -53445,10 +53479,10 @@ dd { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
       return response.arrayBuffer();
     });
   }
-  async function createPdfWriter() {
+  async function createPdfWriter(options = {}) {
     const pdf = await PDFDocument_default.create();
     const fonts = await getPdfFonts(pdf);
-    return { pdf, writer: new PdfWriter(pdf, fonts), fonts };
+    return { pdf, writer: new PdfWriter(pdf, fonts, options), fonts };
   }
   function clientPdfFilename(client) {
     const base = String(client.name || client.chineseName || "client").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "client";
@@ -53470,48 +53504,86 @@ dd { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 1500);
   }
+  function policyTableValue(value) {
+    if (value === void 0 || value === null || String(value).trim() === "" || value === "\u672A\u8A2D\u5B9A / Not set") return "\u2014";
+    return String(value);
+  }
+  function policyTableDate(value) {
+    return policyTableValue(formatDateShort(value));
+  }
+  function policyTableMaturity(policy, dateField, lifetimeField) {
+    return policy?.[lifetimeField] ? "\u7D42\u8EAB / Lifetime" : policyTableDate(policy?.[dateField]);
+  }
+  function policyTableContribution(policy, frequency) {
+    return policy?.contributionFrequency === frequency ? policyTableValue(formatMoney(policy.contributionAmount, policy.currency)) : "\u2014";
+  }
+  function policyTableFill(policy) {
+    const type = String(policy?.coverageType || "").toLowerCase();
+    if (type.includes("life") || type.includes("\u4EBA\u58FD")) return rgb(0.78, 0.95, 0.96);
+    if (type.includes("critical") || type.includes("\u5371\u75BE")) return rgb(0.99, 0.91, 0.66);
+    if (type.includes("medical") || type.includes("\u91AB\u7642")) return rgb(0.96, 0.73, 0.74);
+    if (type.includes("annuity") || type.includes("\u5E74\u91D1")) return rgb(0.9, 0.83, 0.92);
+    if (type.includes("savings") || type.includes("\u5132\u84C4")) return rgb(0.83, 0.76, 0.91);
+    if (type.includes("investment") || type.includes("\u6295\u8CC7")) return rgb(0.76, 0.7, 0.88);
+    return rgb(0.91, 0.94, 0.91);
+  }
   function writeClientPdf(writer, client) {
-    writer.title("\u5BA2\u6236\u8CC7\u6599 / Client profile", `${displayClientName(client)} \xB7 ${formatDateDisplay(client.updatedAt || client.createdAt)}`);
-    writer.section("\u57FA\u672C\u8CC7\u6599 / Client details");
-    [
-      ["\u82F1\u6587\u59D3\u540D / English name", client.name],
-      ["\u4E2D\u6587\u59D3\u540D / Chinese name", client.chineseName],
-      ["\u51FA\u751F\u65E5\u671F / Date of birth", formatDateDisplay(client.birthDate)],
-      ["\u96FB\u8A71 / Telephone", client.phone],
-      ["\u96FB\u90F5 / Email", client.email],
-      ["\u8EAB\u4EFD\u8B49\u865F\u78BC / HKID / ID", client.idNumber],
-      ["\u4F4F\u5740 / Address", client.address],
-      ["\u8077\u696D / Occupation", client.occupation],
-      ["\u5099\u8A3B / Notes", client.notes]
-    ].forEach(([label, value]) => writer.row(label, value && value !== "\u672A\u8A2D\u5B9A / Not set" ? value : ""));
-    writer.section("\u73FE\u6709\u4FDD\u55AE / Existing policies");
-    if (!client.policies?.length) writer.muted("\u5C1A\u672A\u8F38\u5165\u4FDD\u55AE\u8CC7\u6599 / No policy details entered.");
-    (client.policies || []).forEach((policy, index) => {
-      writer.subheading(`\u4FDD\u55AE ${index + 1} / Policy ${index + 1}`);
+    writer.title("\u5BA2\u6236\u4FDD\u55AE\u6AA2\u8996 / Client policy review", `${displayClientName(client)} \xB7 ${policyTableDate(client.updatedAt || client.createdAt)}`);
+    writer.section("\u5BA2\u6236\u8CC7\u6599 / Client information");
+    writer.table(
+      ["\u9805\u76EE\nField", "\u8CC7\u6599\nValue", "\u9805\u76EE\nField", "\u8CC7\u6599\nValue"],
       [
-        ["\u8CA8\u5E63 / Currency", policy.currency],
-        ["\u4FDD\u969C\u985E\u5225 / Coverage type", policy.coverageType],
-        ["\u4FDD\u96AA\u516C\u53F8 / Insurer", policy.company],
-        ["\u4FDD\u55AE\u7DE8\u865F / Policy number", policy.policyNumber],
-        ["\u4FDD\u55AE\u540D\u7A31 / Policy name", policy.policyName],
-        ["\u751F\u6548\u65E5\u671F / Effective date", formatDateDisplay(policy.policyStartDate)],
-        ["\u4FDD\u969C\u984D / Sum assured", formatMoney(policy.sumAssured, policy.currency)],
-        ["\u4F9B\u6B3E\u984D / Contribution", policy.contributionAmount ? `${formatMoney(policy.contributionAmount, policy.currency)} \xB7 ${frequencyLabel(policy.contributionFrequency)}` : ""],
-        ["\u4F9B\u6B3E\u7E3D\u984D / Total contribution", formatMoney(policy.totalContribution, policy.currency)],
-        ["\u4F9B\u6B3E\u5E74\u671F / Contribution term", policy.contributionTerm],
-        ["\u4F9B\u6B3E\u5230\u671F\u65E5 / Contribution maturity", formatMaturityDisplay(policy, "contributionMaturityDate", "contributionMaturityLifetime")],
-        ["\u4FDD\u969C\u5230\u671F\u65E5 / Coverage maturity", formatMaturityDisplay(policy, "coverageEndDate", "coverageEndLifetime")],
-        ["\u4FDD\u55AE\u6301\u6709\u4EBA / Policy owner", policy.policyOwner],
-        ["\u53D7\u4FDD\u4EBA / Life insured", policy.insuredPerson],
-        ["\u53D7\u76CA\u4EBA / Beneficiary", policy.beneficiary],
-        ["\u73FE\u91D1\u50F9\u503C / Cash value", formatMoney(policy.cashValue, policy.currency)],
-        ["\u9810\u8A08\u50F9\u503C / Projected value", formatMoney(policy.projectedValue, policy.currency)],
-        ["\u5099\u8A3B / Notes", policy.notes]
-      ].forEach(([label, value]) => writer.row(label, value && value !== "\u672A\u8A2D\u5B9A / Not set" ? value : ""));
-    });
+        ["\u82F1\u6587\u59D3\u540D / English name", policyTableValue(client.name), "\u4E2D\u6587\u59D3\u540D / Chinese name", policyTableValue(client.chineseName)],
+        ["\u51FA\u751F\u65E5\u671F / Date of birth", policyTableDate(client.birthDate), "\u96FB\u8A71 / Telephone", policyTableValue(client.phone)],
+        ["\u96FB\u90F5 / Email", policyTableValue(client.email), "\u8EAB\u4EFD\u8B49\u865F\u78BC / ID", policyTableValue(client.idNumber)],
+        ["\u5730\u5740 / Address", policyTableValue(client.address), "\u8077\u696D / Occupation", policyTableValue(client.occupation)],
+        ["\u5099\u8A3B / Notes", policyTableValue(client.notes), "", ""]
+      ],
+      { columnWidths: [116, 273, 116, 273], headerSize: 8, bodySize: 8.8, rowGap: 2, cellPadding: 5, headerFill: rgb(0.25, 0.38, 0.3), rowFill: rgb(1, 1, 1) }
+    );
+    writer.section("\u73FE\u6709\u4FDD\u55AE / Existing policies");
+    const policies = client.policies || [];
+    if (!policies.length) {
+      writer.muted("\u5C1A\u672A\u8F38\u5165\u4FDD\u55AE\u8CC7\u6599 / No policy details entered.");
+      return;
+    }
+    const fillForPolicy = (_2, index) => policyTableFill(policies[index]);
+    writer.table(
+      ["\u4FDD\u969C\u985E\u5225\nCoverage", "\u516C\u53F8\nInsurer", "\u4FDD\u55AE\u7DE8\u865F\nPolicy No.", "\u4FDD\u55AE\u540D\u7A31\nPolicy name", "\u4FDD\u55AE\u751F\u6548\u65E5\u671F\nEffective", "\u8CA8\u5E63\nCurrency", "\u4FDD\u969C\u984D\nSum assured", "\u6708\u4F9B\nMonthly", "\u5E74\u4F9B\nAnnual", "\u4E00\u6B21\u7E73\u4ED8\nLump sum", "\u4F9B\u6B3E\u7E3D\u984D\nTotal"],
+      policies.map((policy) => [
+        policyTableValue(policy.coverageType),
+        policyTableValue(policy.company),
+        policyTableValue(policy.policyNumber),
+        policyTableValue(policy.policyName),
+        policyTableDate(policy.policyStartDate),
+        policyTableValue(policy.currency),
+        policyTableValue(formatMoney(policy.sumAssured, policy.currency)),
+        policyTableContribution(policy, "monthly"),
+        policyTableContribution(policy, "annual"),
+        policyTableContribution(policy, "lump-sum"),
+        policyTableValue(formatMoney(policy.totalContribution, policy.currency))
+      ]),
+      { columnWidths: [65, 58, 70, 95, 69, 44, 76, 71, 71, 77, 82], headerSize: 6.9, bodySize: 7.1, cellPadding: 3.5, rowGap: 1.5, rowFill: fillForPolicy }
+    );
+    writer.section("\u4F9B\u6B3E\u3001\u5230\u671F\u53CA\u6301\u6709\u4EBA / Contributions, maturities and ownership");
+    writer.table(
+      ["\u4F9B\u6B3E\u5E74\u671F\nTerm", "\u4F9B\u6B3E\u5230\u671F\u65E5\nContribution maturity", "\u4FDD\u969C\u5230\u671F\u65E5\nCoverage maturity", "\u4FDD\u55AE\u6301\u6709\u4EBA\nOwner", "\u53D7\u4FDD\u4EBA\nLife insured", "\u53D7\u76CA\u4EBA\nBeneficiary", "\u73FE\u91D1\u50F9\u503C\nCash value", "\u9810\u8A08\u50F9\u503C\nProjected value", "\u5099\u8A3B\nNotes"],
+      policies.map((policy) => [
+        policyTableValue(policy.contributionTerm),
+        policyTableMaturity(policy, "contributionMaturityDate", "contributionMaturityLifetime"),
+        policyTableMaturity(policy, "coverageEndDate", "coverageEndLifetime"),
+        policyTableValue(policy.policyOwner),
+        policyTableValue(policy.insuredPerson),
+        policyTableValue(policy.beneficiary),
+        policyTableValue(formatMoney(policy.cashValue, policy.currency)),
+        policyTableValue(formatMoney(policy.projectedValue, policy.currency)),
+        policyTableValue(policy.notes)
+      ]),
+      { columnWidths: [55, 88, 88, 100, 100, 100, 75, 85, 87], headerSize: 6.9, bodySize: 7.1, cellPadding: 3.5, rowGap: 1.5, rowFill: fillForPolicy }
+    );
   }
   async function downloadClientPdf(client) {
-    const { pdf, writer } = await createPdfWriter();
+    const { pdf, writer } = await createPdfWriter({ width: 842, height: 595, margin: 32 });
     writeClientPdf(writer, client);
     writer.footers();
     await savePdf(pdf, clientPdfFilename(client));
