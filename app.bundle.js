@@ -52908,6 +52908,15 @@
       drawMixedText(this.page, title2, this.margin, this.y, 14, this.fonts, rgb(0.25, 0.35, 0.3));
       this.y -= 23;
     }
+    policyHeading(title2, fill2 = rgb(0.86, 0.91, 0.87)) {
+      const height = 23;
+      this.ensure(height + 6);
+      const x = this.margin - 2;
+      const barY = this.y - height;
+      this.page.drawRectangle({ x, y: barY, width: this.width - x * 2, height, color: fill2, borderColor: rgb(0.68, 0.73, 0.69), borderWidth: 0.45 });
+      drawMixedText(this.page, title2, this.margin + 7, barY + 6, 12, this.fonts, rgb(0.15, 0.28, 0.21));
+      this.y -= height + 6;
+    }
     row(label, value) {
       if (value === void 0 || value === null || String(value).trim() === "") return;
       const labelLines = wrapMixed(label, this.width - this.margin * 2, this.fonts, 11);
@@ -52950,6 +52959,19 @@
         const fill2 = typeof rowFill === "function" ? rowFill(row, index) : rowFill;
         drawRow(row, { fill: fill2 });
       });
+    }
+    tableHeight(headers, rows, { columnWidths, headerSize = 7.2, bodySize = 7.1, cellPadding = 4, rowGap = 2 } = {}) {
+      const availableWidth = this.width - this.margin * 2;
+      const widthsTotal = columnWidths.reduce((sum2, width) => sum2 + width, 0);
+      const scale2 = availableWidth / widthsTotal;
+      const widths = columnWidths.map((width) => width * scale2);
+      const lineHeight = (size) => size + rowGap;
+      const rowHeight = (values2, header = false) => {
+        const size = header ? headerSize : bodySize;
+        const lines = values2.map((value, index) => wrapMixed(String(value ?? ""), Math.max(8, widths[index] - cellPadding * 2), this.fonts, size));
+        return Math.max(header ? 27 : 23, Math.max(...lines.map((cellLines) => cellLines.length)) * lineHeight(size) + cellPadding * 2);
+      };
+      return rowHeight(headers, true) + rows.reduce((height, row) => height + rowHeight(row), 0);
     }
     footers() {
       this.pages.forEach((page, index) => {
@@ -53055,16 +53077,19 @@
       ],
       { columnWidths: [116, 273, 116, 273], headerSize: 8, bodySize: 8.8, rowGap: 2, cellPadding: 5, headerFill: rgb(0.25, 0.38, 0.3), rowFill: rgb(1, 1, 1) }
     );
-    writer.section("\u73FE\u6709\u4FDD\u55AE / Existing policies");
     const policies = client.policies || [];
     if (!policies.length) {
       writer.muted("\u5C1A\u672A\u8F38\u5165\u4FDD\u55AE\u8CC7\u6599 / No policy details entered.");
       return;
     }
-    const fillForPolicy = (_2, index) => policyTableFill(policies[index]);
-    writer.table(
-      ["\u4FDD\u969C\u985E\u5225\nCoverage", "\u516C\u53F8\nInsurer", "\u4FDD\u55AE\u7DE8\u865F\nPolicy No.", "\u4FDD\u55AE\u540D\u7A31\nPolicy name", "\u4FDD\u55AE\u751F\u6548\u65E5\u671F\nEffective", "\u8CA8\u5E63\nCurrency", "\u4FDD\u969C\u984D\nSum assured", "\u6708\u4F9B\nMonthly", "\u5E74\u4F9B\nAnnual", "\u4E00\u6B21\u7E73\u4ED8\nLump sum", "\u4F9B\u6B3E\u7E3D\u984D\nTotal"],
-      policies.map((policy) => [
+    const overviewHeaders = ["\u4FDD\u969C\u985E\u5225\nCoverage", "\u516C\u53F8\nInsurer", "\u4FDD\u55AE\u7DE8\u865F\nPolicy No.", "\u4FDD\u55AE\u540D\u7A31\nPolicy name", "\u4FDD\u55AE\u751F\u6548\u65E5\u671F\nEffective", "\u8CA8\u5E63\nCurrency", "\u4FDD\u969C\u984D\nSum assured", "\u6708\u4F9B\nMonthly", "\u5E74\u4F9B\nAnnual", "\u4E00\u6B21\u7E73\u4ED8\nLump sum", "\u4F9B\u6B3E\u7E3D\u984D\nTotal"];
+    const overviewOptions = { columnWidths: [65, 58, 70, 95, 69, 44, 76, 71, 71, 77, 82], headerSize: 6.9, bodySize: 7.1, cellPadding: 3.5, rowGap: 1.5 };
+    const detailsHeaders = ["\u4F9B\u6B3E\u5E74\u671F\nTerm", "\u4F9B\u6B3E\u5230\u671F\u65E5\nContribution maturity", "\u4FDD\u969C\u5230\u671F\u65E5\nCoverage maturity", "\u4FDD\u55AE\u6301\u6709\u4EBA\nOwner", "\u53D7\u4FDD\u4EBA\nLife insured", "\u53D7\u76CA\u4EBA\nBeneficiary", "\u73FE\u91D1\u50F9\u503C\nCash value", "\u9810\u8A08\u50F9\u503C\nProjected value", "\u5099\u8A3B\nNotes"];
+    const detailsOptions = { columnWidths: [55, 88, 88, 100, 100, 100, 75, 85, 87], headerSize: 6.9, bodySize: 7.1, cellPadding: 3.5, rowGap: 1.5 };
+    writer.section("\u73FE\u6709\u4FDD\u55AE / Existing policies");
+    policies.forEach((policy, index) => {
+      const fill2 = policyTableFill(policy);
+      const overviewRow = [
         policyTableValue(policy.coverageType),
         policyTableValue(policy.company),
         policyTableValue(policy.policyNumber),
@@ -53076,13 +53101,8 @@
         policyTableContribution(policy, "annual"),
         policyTableContribution(policy, "lump-sum"),
         policyTableValue(formatMoney(policy.totalContribution, policy.currency))
-      ]),
-      { columnWidths: [65, 58, 70, 95, 69, 44, 76, 71, 71, 77, 82], headerSize: 6.9, bodySize: 7.1, cellPadding: 3.5, rowGap: 1.5, rowFill: fillForPolicy }
-    );
-    writer.section("\u4F9B\u6B3E\u3001\u5230\u671F\u53CA\u6301\u6709\u4EBA / Contributions, maturities and ownership");
-    writer.table(
-      ["\u4F9B\u6B3E\u5E74\u671F\nTerm", "\u4F9B\u6B3E\u5230\u671F\u65E5\nContribution maturity", "\u4FDD\u969C\u5230\u671F\u65E5\nCoverage maturity", "\u4FDD\u55AE\u6301\u6709\u4EBA\nOwner", "\u53D7\u4FDD\u4EBA\nLife insured", "\u53D7\u76CA\u4EBA\nBeneficiary", "\u73FE\u91D1\u50F9\u503C\nCash value", "\u9810\u8A08\u50F9\u503C\nProjected value", "\u5099\u8A3B\nNotes"],
-      policies.map((policy) => [
+      ];
+      const detailsRow = [
         policyTableValue(policy.contributionTerm),
         policyTableMaturity(policy, "contributionMaturityDate", "contributionMaturityLifetime"),
         policyTableMaturity(policy, "coverageEndDate", "coverageEndLifetime"),
@@ -53092,9 +53112,14 @@
         policyTableValue(formatMoney(policy.cashValue, policy.currency)),
         policyTableValue(formatMoney(policy.projectedValue, policy.currency)),
         policyTableValue(policy.notes)
-      ]),
-      { columnWidths: [55, 88, 88, 100, 100, 100, 75, 85, 87], headerSize: 6.9, bodySize: 7.1, cellPadding: 3.5, rowGap: 1.5, rowFill: fillForPolicy }
-    );
+      ];
+      const blockHeight = 29 + writer.tableHeight(overviewHeaders, [overviewRow], overviewOptions) + writer.tableHeight(detailsHeaders, [detailsRow], detailsOptions) + 8;
+      writer.ensure(blockHeight);
+      writer.policyHeading(`\u4FDD\u55AE ${index + 1} / Policy ${index + 1}`, fill2);
+      writer.table(overviewHeaders, [overviewRow], { ...overviewOptions, rowFill: fill2 });
+      writer.table(detailsHeaders, [detailsRow], { ...detailsOptions, rowFill: fill2 });
+      writer.y -= 8;
+    });
   }
   async function downloadClientPdf(client) {
     const { pdf, writer } = await createPdfWriter({ width: 842, height: 595, margin: 32 });
