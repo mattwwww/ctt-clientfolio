@@ -754,13 +754,14 @@ function drawMixedText(page, text, x, y, size, fonts, color = rgb(0.12, 0.17, 0.
 }
 
 class PdfWriter {
-  constructor(pdf, fonts) {
+  constructor(pdf, fonts, { width = 595, height = 842, margin = 52 } = {}) {
     this.pdf = pdf;
     this.fonts = fonts;
     this.pages = [];
-    this.width = 595;
-    this.height = 842;
-    this.margin = 52;
+    this.width = width;
+    this.height = height;
+    this.margin = margin;
+    this.contentBottom = 58;
     this.y = 0;
     this.page = null;
     this.newPage();
@@ -769,11 +770,11 @@ class PdfWriter {
   newPage() {
     this.page = this.pdf.addPage([this.width, this.height]);
     this.pages.push(this.page);
-    this.y = 786;
+    this.y = this.height - 56;
   }
 
   ensure(space = 24) {
-    if (this.y - space < 58) this.newPage();
+    if (this.y - space < this.contentBottom) this.newPage();
   }
 
   text(text, { size = 14, color = rgb(0.12, 0.17, 0.14), x = this.margin, maxWidth = this.width - this.margin * 2, gap = 6 } = {}) {
@@ -796,8 +797,10 @@ class PdfWriter {
 
   section(title) {
     this.ensure(36);
-    this.page.drawRectangle({ x: 48, y: this.y - 5, width: 499, height: 24, color: rgb(0.91, 0.95, 0.92) });
-    drawMixedText(this.page, title, 58, this.y + 2, 14, this.fonts, rgb(0.18, 0.35, 0.27));
+    const x = this.margin - 4;
+    const barY = this.y - 28;
+    this.page.drawRectangle({ x, y: barY, width: this.width - x * 2, height: 24, color: rgb(0.91, 0.95, 0.92) });
+    drawMixedText(this.page, title, this.margin + 6, barY + 7, 14, this.fonts, rgb(0.18, 0.35, 0.27));
     this.y -= 35;
   }
 
@@ -823,11 +826,45 @@ class PdfWriter {
     this.text(text, { size: 14, color: rgb(0.45, 0.51, 0.47), gap: 7 });
   }
 
+  table(headers, rows, { columnWidths, headerFill = rgb(0.22, 0.34, 0.28), rowFill = rgb(1, 1, 1), borderColor = rgb(0.68, 0.73, 0.69), headerTextColor = rgb(1, 1, 1), headerSize = 7.2, bodySize = 7.1, cellPadding = 4, rowGap = 2 } = {}) {
+    const availableWidth = this.width - this.margin * 2;
+    const widthsTotal = columnWidths.reduce((sum, width) => sum + width, 0);
+    const scale = availableWidth / widthsTotal;
+    const widths = columnWidths.map(width => width * scale);
+    const lineHeight = size => size + rowGap;
+
+    const drawRow = (values, { header = false, fill = rowFill } = {}) => {
+      const size = header ? headerSize : bodySize;
+      const lines = values.map((value, index) => wrapMixed(String(value ?? ''), Math.max(8, widths[index] - cellPadding * 2), this.fonts, size));
+      const rowHeight = Math.max(header ? 27 : 23, Math.max(...lines.map(cellLines => cellLines.length)) * lineHeight(size) + cellPadding * 2);
+      if (this.y - rowHeight < this.contentBottom) {
+        this.newPage();
+        if (!header) drawRow(headers, { header: true, fill: headerFill });
+      }
+      let x = this.margin;
+      lines.forEach((cellLines, index) => {
+        const width = widths[index];
+        this.page.drawRectangle({ x, y: this.y - rowHeight, width, height: rowHeight, color: fill, borderColor, borderWidth: 0.45 });
+        cellLines.forEach((line, lineIndex) => drawMixedText(this.page, line, x + cellPadding, this.y - cellPadding - size - lineIndex * lineHeight(size), size, this.fonts, header ? headerTextColor : rgb(0.12, 0.17, 0.14)));
+        x += width;
+      });
+      this.y -= rowHeight;
+    };
+
+    drawRow(headers, { header: true, fill: headerFill });
+    rows.forEach((row, index) => {
+      const fill = typeof rowFill === 'function' ? rowFill(row, index) : rowFill;
+      drawRow(row, { fill });
+    });
+  }
+
   footers() {
     this.pages.forEach((page, index) => {
       page.drawLine({ start: { x: this.margin, y: 43 }, end: { x: this.width - this.margin, y: 43 }, thickness: 0.5, color: rgb(0.85, 0.88, 0.85) });
       drawMixedText(page, `Clientfolio · ${index + 1}`, this.margin, 28, 9, this.fonts, rgb(0.45, 0.51, 0.47));
-      drawMixedText(page, '資料由本機產生 / Generated locally', 370, 28, 9, this.fonts, rgb(0.45, 0.51, 0.47));
+      const footerText = '資料由本機產生 / Generated locally';
+      const footerWidth = mixedWidth(footerText, this.fonts, 9);
+      drawMixedText(page, footerText, this.width - this.margin - footerWidth, 28, 9, this.fonts, rgb(0.45, 0.51, 0.47));
     });
   }
 }
@@ -869,10 +906,10 @@ function loadPdfFontBytes() {
   });
 }
 
-async function createPdfWriter() {
+async function createPdfWriter(options = {}) {
   const pdf = await PDFDocument.create();
   const fonts = await getPdfFonts(pdf);
-  return { pdf, writer: new PdfWriter(pdf, fonts), fonts };
+  return { pdf, writer: new PdfWriter(pdf, fonts, options), fonts };
 }
 
 function clientPdfFilename(client) {
@@ -898,30 +935,79 @@ async function savePdf(pdf, filename) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
+function policyTableValue(value) {
+  if (value === undefined || value === null || String(value).trim() === '' || value === '未設定 / Not set') return '—';
+  return String(value);
+}
+
+function policyTableDate(value) {
+  return policyTableValue(formatDateShort(value));
+}
+
+function policyTableMaturity(policy, dateField, lifetimeField) {
+  return policy?.[lifetimeField] ? '終身 / Lifetime' : policyTableDate(policy?.[dateField]);
+}
+
+function policyTableContribution(policy, frequency) {
+  return policy?.contributionFrequency === frequency ? policyTableValue(formatMoney(policy.contributionAmount, policy.currency)) : '—';
+}
+
+function policyTableFill(policy) {
+  const type = String(policy?.coverageType || '').toLowerCase();
+  if (type.includes('life') || type.includes('人壽')) return rgb(0.78, 0.95, 0.96);
+  if (type.includes('critical') || type.includes('危疾')) return rgb(0.99, 0.91, 0.66);
+  if (type.includes('medical') || type.includes('醫療')) return rgb(0.96, 0.73, 0.74);
+  if (type.includes('annuity') || type.includes('年金')) return rgb(0.90, 0.83, 0.92);
+  if (type.includes('savings') || type.includes('儲蓄')) return rgb(0.83, 0.76, 0.91);
+  if (type.includes('investment') || type.includes('投資')) return rgb(0.76, 0.70, 0.88);
+  return rgb(0.91, 0.94, 0.91);
+}
+
 function writeClientPdf(writer, client) {
-  writer.title('客戶資料 / Client profile', `${displayClientName(client)} · ${formatDateDisplay(client.updatedAt || client.createdAt)}`);
-  writer.section('基本資料 / Client details');
-  [
-    ['英文姓名 / English name', client.name], ['中文姓名 / Chinese name', client.chineseName], ['出生日期 / Date of birth', formatDateDisplay(client.birthDate)],
-    ['電話 / Telephone', client.phone], ['電郵 / Email', client.email], ['身份證號碼 / HKID / ID', client.idNumber], ['住址 / Address', client.address], ['職業 / Occupation', client.occupation], ['備註 / Notes', client.notes]
-  ].forEach(([label, value]) => writer.row(label, value && value !== '未設定 / Not set' ? value : ''));
-  writer.section('現有保單 / Existing policies');
-  if (!client.policies?.length) writer.muted('尚未輸入保單資料 / No policy details entered.');
-  (client.policies || []).forEach((policy, index) => {
-    writer.subheading(`保單 ${index + 1} / Policy ${index + 1}`);
+  writer.title('客戶保單檢視 / Client policy review', `${displayClientName(client)} · ${policyTableDate(client.updatedAt || client.createdAt)}`);
+  writer.section('客戶資料 / Client information');
+  writer.table(
+    ['項目\nField', '資料\nValue', '項目\nField', '資料\nValue'],
     [
-      ['貨幣 / Currency', policy.currency], ['保障類別 / Coverage type', policy.coverageType], ['保險公司 / Insurer', policy.company], ['保單編號 / Policy number', policy.policyNumber],
-      ['保單名稱 / Policy name', policy.policyName], ['生效日期 / Effective date', formatDateDisplay(policy.policyStartDate)], ['保障額 / Sum assured', formatMoney(policy.sumAssured, policy.currency)],
-      ['供款額 / Contribution', policy.contributionAmount ? `${formatMoney(policy.contributionAmount, policy.currency)} · ${frequencyLabel(policy.contributionFrequency)}` : ''],
-      ['供款總額 / Total contribution', formatMoney(policy.totalContribution, policy.currency)], ['供款年期 / Contribution term', policy.contributionTerm], ['供款到期日 / Contribution maturity', formatMaturityDisplay(policy, 'contributionMaturityDate', 'contributionMaturityLifetime')],
-      ['保障到期日 / Coverage maturity', formatMaturityDisplay(policy, 'coverageEndDate', 'coverageEndLifetime')], ['保單持有人 / Policy owner', policy.policyOwner], ['受保人 / Life insured', policy.insuredPerson],
-      ['受益人 / Beneficiary', policy.beneficiary], ['現金價值 / Cash value', formatMoney(policy.cashValue, policy.currency)], ['預計價值 / Projected value', formatMoney(policy.projectedValue, policy.currency)], ['備註 / Notes', policy.notes]
-    ].forEach(([label, value]) => writer.row(label, value && value !== '未設定 / Not set' ? value : ''));
-  });
+      ['英文姓名 / English name', policyTableValue(client.name), '中文姓名 / Chinese name', policyTableValue(client.chineseName)],
+      ['出生日期 / Date of birth', policyTableDate(client.birthDate), '電話 / Telephone', policyTableValue(client.phone)],
+      ['電郵 / Email', policyTableValue(client.email), '身份證號碼 / ID', policyTableValue(client.idNumber)],
+      ['地址 / Address', policyTableValue(client.address), '職業 / Occupation', policyTableValue(client.occupation)],
+      ['備註 / Notes', policyTableValue(client.notes), '', '']
+    ],
+    { columnWidths: [116, 273, 116, 273], headerSize: 8, bodySize: 8.8, rowGap: 2, cellPadding: 5, headerFill: rgb(0.25, 0.38, 0.30), rowFill: rgb(1, 1, 1) }
+  );
+
+  writer.section('現有保單 / Existing policies');
+  const policies = client.policies || [];
+  if (!policies.length) {
+    writer.muted('尚未輸入保單資料 / No policy details entered.');
+    return;
+  }
+
+  const fillForPolicy = (_, index) => policyTableFill(policies[index]);
+  writer.table(
+    ['保障類別\nCoverage', '公司\nInsurer', '保單編號\nPolicy No.', '保單名稱\nPolicy name', '保單生效日期\nEffective', '貨幣\nCurrency', '保障額\nSum assured', '月供\nMonthly', '年供\nAnnual', '一次繳付\nLump sum', '供款總額\nTotal'],
+    policies.map(policy => [
+      policyTableValue(policy.coverageType), policyTableValue(policy.company), policyTableValue(policy.policyNumber), policyTableValue(policy.policyName), policyTableDate(policy.policyStartDate), policyTableValue(policy.currency),
+      policyTableValue(formatMoney(policy.sumAssured, policy.currency)), policyTableContribution(policy, 'monthly'), policyTableContribution(policy, 'annual'), policyTableContribution(policy, 'lump-sum'), policyTableValue(formatMoney(policy.totalContribution, policy.currency))
+    ]),
+    { columnWidths: [65, 58, 70, 95, 69, 44, 76, 71, 71, 77, 82], headerSize: 6.9, bodySize: 7.1, cellPadding: 3.5, rowGap: 1.5, rowFill: fillForPolicy }
+  );
+
+  writer.section('供款、到期及持有人 / Contributions, maturities and ownership');
+  writer.table(
+    ['供款年期\nTerm', '供款到期日\nContribution maturity', '保障到期日\nCoverage maturity', '保單持有人\nOwner', '受保人\nLife insured', '受益人\nBeneficiary', '現金價值\nCash value', '預計價值\nProjected value', '備註\nNotes'],
+    policies.map(policy => [
+      policyTableValue(policy.contributionTerm), policyTableMaturity(policy, 'contributionMaturityDate', 'contributionMaturityLifetime'), policyTableMaturity(policy, 'coverageEndDate', 'coverageEndLifetime'),
+      policyTableValue(policy.policyOwner), policyTableValue(policy.insuredPerson), policyTableValue(policy.beneficiary), policyTableValue(formatMoney(policy.cashValue, policy.currency)), policyTableValue(formatMoney(policy.projectedValue, policy.currency)), policyTableValue(policy.notes)
+    ]),
+    { columnWidths: [55, 88, 88, 100, 100, 100, 75, 85, 87], headerSize: 6.9, bodySize: 7.1, cellPadding: 3.5, rowGap: 1.5, rowFill: fillForPolicy }
+  );
 }
 
 async function downloadClientPdf(client) {
-  const { pdf, writer } = await createPdfWriter();
+  const { pdf, writer } = await createPdfWriter({ width: 842, height: 595, margin: 32 });
   writeClientPdf(writer, client);
   writer.footers();
   await savePdf(pdf, clientPdfFilename(client));
